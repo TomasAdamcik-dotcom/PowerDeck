@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import engine
+from . import engine, guard
+from .capture import capture_current
+from .logs import setup_logging
 from .profile import load_profiles
 from .status import read_status
 
@@ -15,6 +17,10 @@ def main(argv=None) -> int:
     sub.add_parser("list")
     sub.add_parser("status")
     sub.add_parser("restore")
+    sub.add_parser("snapshot", help="save current system settings as the Default profile")
+    g = sub.add_parser("guard", help="run thermal/battery guard")
+    g.add_argument("--once", action="store_true")
+    g.add_argument("--interval", type=int, default=30)
     for c in ("plan", "apply"):
         s = sub.add_parser(c)
         s.add_argument("name")
@@ -22,6 +28,7 @@ def main(argv=None) -> int:
             s.add_argument("-y", "--yes", action="store_true", help="skip confirmation")
     a = ap.parse_args(argv)
 
+    setup_logging()
     profiles = {p.name: p for p in load_profiles()}
     if a.cmd == "list":
         active = engine.active_profile()
@@ -29,7 +36,19 @@ def main(argv=None) -> int:
             print(f"{'*' if n == active else ' '} {n:14} {p.description}")
         return 0
     if a.cmd == "status":
-        print(read_status())
+        from dataclasses import asdict
+        for k, v in asdict(read_status()).items():
+            print(f"{k}: {v}")
+        return 0
+    if a.cmd == "snapshot":
+        from .profile import save_profile
+        print("Saved:", save_profile(capture_current()))
+        return 0
+    if a.cmd == "guard":
+        if a.once:
+            guard.run_once(guard.GuardState())
+        else:
+            guard.loop(a.interval)
         return 0
     if a.cmd == "restore":
         errs = engine.restore_last()
@@ -38,7 +57,7 @@ def main(argv=None) -> int:
     if a.name not in profiles:
         print(f"Unknown profile: {a.name}", file=sys.stderr)
         return 2
-    plan = engine.make_plan(profiles[a.name])
+    plan = engine.make_plan(profiles[a.name], previous=profiles.get(engine.active_profile() or ""))
     print(plan.diff_text())
     if a.cmd == "plan" or plan.empty:
         return 0

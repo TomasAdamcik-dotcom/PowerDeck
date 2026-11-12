@@ -5,7 +5,7 @@ import os
 
 from . import helper
 from .changes import Change
-from .profile import Profile
+from .profile import Profile, parse_task
 from .runner import Runner
 
 PS = "org.gnome.settings-daemon.plugins.power"
@@ -114,4 +114,103 @@ def plan_power_mode(p: Profile, run: Runner) -> list[Change]:
                    ["powerprofilesctl", "set", cur])]
 
 
-BACKENDS = (plan_lid, plan_auto_suspend, plan_wifi, plan_power_mode)
+# -- Tethering autoconnect -------------------------------------------------
+def plan_tethering(p: Profile, run: Runner) -> list[Change]:
+    t = p.tethering
+    if not t:
+        return []
+    name, prio = t["connection"], str(t.get("priority", 100))
+    rc, out = run(["nmcli", "-g", "connection.autoconnect,connection.autoconnect-priority",
+                   "connection", "show", name])
+    if rc != 0:
+        return []
+    lines = (out.splitlines() + ["yes", "0"])[:2]
+    cur_auto, cur_prio = lines[0].strip(), lines[1].strip()
+    if cur_auto == "yes" and cur_prio == prio:
+        return []
+    mod = ["nmcli", "connection", "modify", name]
+    return [Change("nmcli", f"Tethering autoconnect [{name}]", f"{cur_auto}/prio {cur_prio}",
+                   f"yes/prio {prio}",
+                   mod + ["connection.autoconnect", "yes", "connection.autoconnect-priority", prio],
+                   mod + ["connection.autoconnect", cur_auto, "connection.autoconnect-priority", cur_prio])]
+
+
+# -- Display: blank/lock timers, night light, brightness -------------------
+def _gs_change(run, label, schema, key, new, parse=lambda s: s.strip().split()[-1].strip("'")):
+    rc, out = run(["gsettings", "get", schema, key])
+    if rc != 0:
+        return []
+    cur = parse(out)
+    if cur == new:
+        return []
+    return [Change("gsettings", label, cur, new, ["gsettings", "set", schema, key, new],
+                   ["gsettings", "set", schema, key, cur])]
+
+
+def plan_display(p: Profile, run: Runner) -> list[Change]:
+    d = p.display
+    out: list[Change] = []
+    if "blank_after_minutes" in d:
+        secs = str(d["blank_after_minutes"] * 60)
+        out += _gs_change(run, "Screen blank delay (s)", "org.gnome.desktop.session", "idle-delay", secs)
+    if "lock_after_minutes" in d:
+        lock_min = d["lock_after_minutes"]
+        blank_min = d.get("blank_after_minutes", 0)
+        out += _gs_change(run, "Screen lock enabled", "org.gnome.desktop.screensaver", "lock-enabled",
+                          "true" if lock_min else "false")
+        if lock_min:
+            delay = str(max(0, lock_min - blank_min) * 60)
+            out += _gs_change(run, "Lock delay after blank (s)", "org.gnome.desktop.screensaver",
+                              "lock-delay", delay)
+    if "night_light" in d:
+        out += _gs_change(run, "Night light", "org.gnome.settings-daemon.plugins.color",
+                          "night-light-enabled", "true" if d["night_light"] else "false")
+    if "brightness_percent" in d:
+        rc, o = run(["brightnessctl", "-m"])
+        if rc == 0 and o.count(",") >= 4:
+            cur = o.split(",")[3].rstrip("%")
+            new = str(d["brightness_percent"])
+            if cur != new:
+                out.append(Change("brightnessctl", "Brightness (%)", cur, new,
+                                  ["brightnessctl", "set", new + "%"], ["brightnessctl", "set", cur + "%"]))
+    return out
+
+
+# -- Bluetooth (rfkill) ----------------------------------------------------
+def plan_bluetooth(p: Profile, run: Runner) -> list[Change]:
+    if p.bluetooth is None:
+        return []
+    rc, out = run(["rfkill", "list", "bluetooth"])
+    if rc != 0 or "Soft blocked" not in out:
+        return []
+    blocked = "Soft blocked: yes" in out
+    want_on = p.bluetooth
+    if blocked != want_on:  # already in desired state
+        return []
+    on, off = ["rfkill", "unblock", "bluetooth"], ["rfkill", "block", "bluetooth"]
+    return [Change("rfkill", "Bluetooth", "off" if blocked else "on", "on" if want_on else "off",
+                   on if want_on else off, off if want_on else on)]
+
+
+# -- User tasks (whitelisted systemctl --user only) ------------------------
+_INVERSE = {"start": "stop", "stop": "start"}
+
+
+def _task_change(cmd: str, label: str, reversible: bool) -> Change:
+    argv = parse_task(cmd)
+    inv = _INVERSE.get(argv[2])
+    revert = ["systemctl", "--user", inv, argv[3]] if (reversible and inv) else []
+    return Change("task", f"{label}: {argv[2]} {argv[3]}", "-", "run", argv, revert)
+
+
+def plan_tasks(p: Profile, run: Runner, previous: Profile | None = None) -> list[Change]:
+    out = []
+    if previous is not None and previous.name != p.name:
+        out += [_task_change(c, "On leaving " + previous.name, False)
+                for c in previous.tasks.get("on_deactivate", [])]
+    out += [_task_change(c, "On activate", True) for c in p.tasks.get("on_activate", [])]
+    return out
+
+
+BACKENDS = (plan_lid, plan_auto_suspend, plan_wifi, plan_tethering, plan_power_mode,
+            plan_display, plan_bluetooth)

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PowerDeck
+Name[sk]=PowerDeck
+Comment=Linux workstation profiles
+Comment[sk]=Profily pre Linux notebooky
+Exec=powerdeck-gtk
+Icon=io.github.powerdeck.PowerDeck
+Categories=System;Settings;GTK;
+Keywords=power;battery;lid;suspend;wifi;profile;
+Terminal=false

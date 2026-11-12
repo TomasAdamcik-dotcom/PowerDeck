@@ -83,7 +83,7 @@ def test_plan_remote_work_and_diff(tmp_path):
 def test_nothing_changes_before_apply():
     sysm = FakeSystem()
     engine.make_plan(BY["BatterySaver"], sysm)
-    assert all(c[0] in ("gsettings", "nmcli", "powerprofilesctl") and c[1] in ("get", "-g") for c in sysm.calls)
+    assert all(c[1] in ("get", "-g", "list", "-m") for c in sysm.calls)
 
 
 def test_apply_and_restore(tmp_path):

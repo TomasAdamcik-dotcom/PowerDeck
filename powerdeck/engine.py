@@ -6,10 +6,15 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import logging
+
 from . import backends, paths
 from .changes import Change
 from .profile import Profile
 from .runner import Runner, system_runner
+
+
+log = logging.getLogger("powerdeck")
 
 
 @dataclass
@@ -31,11 +36,13 @@ class Plan:
         return "\n".join("• " + c.describe() for c in self.changes)
 
 
-def make_plan(p: Profile, run: Runner = system_runner) -> Plan:
+def make_plan(p: Profile, run: Runner = system_runner, previous: Profile | None = None) -> Plan:
+    """``previous`` = currently active profile, whose on_deactivate tasks should run."""
     p.validate()
     changes: list[Change] = []
     for planner in backends.BACKENDS:
         changes.extend(planner(p, run))
+    changes.extend(backends.plan_tasks(p, run, previous))
     return Plan(p.name, changes)
 
 
@@ -66,13 +73,17 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
                                 "changes": [c.to_dict() for c in plan.changes]}, indent=2))
     done: list[Change] = []
     errors: list[str] = []
+    log.info("applying profile %s (%d changes)", plan.profile, len(plan.changes))
     for c in plan.changes:
         rc, out = run(c.apply_argv)
         if rc != 0:
             errors.append(f"{c.target}: {out or 'failed (rc=%d)' % rc}")
+            log.error("change failed: %s -> %s; rolling back %d", c.describe(), errors[-1], len(done))
             for d in reversed(done):  # roll back what we already did
-                run(d.revert_argv)
+                if d.revert_argv:
+                    run(d.revert_argv)
             return errors
+        log.info("applied: %s", c.describe())
         done.append(c)
     (active_file or paths.state_dir() / "active.json").parent.mkdir(parents=True, exist_ok=True)
     (active_file or paths.state_dir() / "active.json").write_text(json.dumps({"profile": plan.profile}))
@@ -86,9 +97,12 @@ def restore_last(run: Runner = system_runner, backup_dir: Path | None = None) ->
     if f is None:
         return ["No backup to restore."]
     data = json.loads(f.read_text())
+    log.info("restoring backup %s", f.name)
     errors = []
     for d in reversed(data["changes"]):
         c = Change.from_dict(d)
+        if not c.revert_argv:
+            continue
         rc, out = run(c.revert_argv)
         if rc != 0:
             errors.append(f"{c.target}: {out or 'failed'}")

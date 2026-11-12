@@ -1,0 +1,9 @@
+[Unit]
+Description=PowerDeck thermal and battery guard
+
+[Service]
+ExecStart=/usr/bin/powerdeck guard --interval 30
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

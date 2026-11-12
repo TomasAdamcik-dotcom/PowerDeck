@@ -18,6 +18,21 @@ class ProfileError(ValueError):
     pass
 
 
+_UNIT_RE = re.compile(r"^[A-Za-z0-9_.@:-]{1,100}\.(service|target|timer)$")
+
+
+def parse_task(cmd: str) -> list[str]:
+    """Only ``systemctl --user (start|stop|restart) UNIT`` is allowed.
+
+    Profiles may come from other people, so they must never run arbitrary commands.
+    """
+    argv = cmd.split()
+    if (len(argv) != 4 or argv[:2] != ["systemctl", "--user"]
+            or argv[2] not in ("start", "stop", "restart") or not _UNIT_RE.match(argv[3])):
+        raise ProfileError(f"Task not allowed (only 'systemctl --user start|stop|restart UNIT'): {cmd!r}")
+    return argv
+
+
 @dataclass
 class Profile:
     """A set of laptop settings. ``None`` means "leave unmanaged"."""
@@ -31,6 +46,9 @@ class Profile:
     power_mode: str | None = None
     thermal_guard: dict = field(default_factory=dict)  # warn_celsius, critical_celsius
     tasks: dict = field(default_factory=dict)  # on_activate / on_deactivate
+    tethering: dict = field(default_factory=dict)  # connection, priority
+    display: dict = field(default_factory=dict)  # blank_after_minutes, lock_after_minutes, brightness_percent, night_light
+    bluetooth: bool | None = None
     builtin: bool = False
 
     def validate(self) -> None:
@@ -51,6 +69,32 @@ class Profile:
         for n in self.preferred_networks:
             if not isinstance(n, str) or not n or n.startswith("-"):
                 raise ProfileError(f"Invalid network name: {n!r}")
+        t = self.tethering
+        if t:
+            c = t.get("connection")
+            if not isinstance(c, str) or not c or c.startswith("-"):
+                raise ProfileError("tethering.connection invalid")
+            if not isinstance(t.get("priority", 100), int) or not -999 <= t.get("priority", 100) <= 999:
+                raise ProfileError("tethering.priority invalid")
+        d = self.display
+        for k in d:
+            if k not in ("blank_after_minutes", "lock_after_minutes", "brightness_percent", "night_light"):
+                raise ProfileError(f"Unknown display key: {k}")
+        for k in ("blank_after_minutes", "lock_after_minutes"):
+            if k in d and not (isinstance(d[k], int) and 0 <= d[k] <= 1440):
+                raise ProfileError(f"display.{k} invalid")
+        if "brightness_percent" in d and not (isinstance(d["brightness_percent"], int) and 1 <= d["brightness_percent"] <= 100):
+            raise ProfileError("display.brightness_percent invalid")
+        if "night_light" in d and not isinstance(d["night_light"], bool):
+            raise ProfileError("display.night_light invalid")
+        if self.bluetooth not in (None, True, False):
+            raise ProfileError("bluetooth must be true/false")
+        for k in ("on_activate", "on_deactivate"):
+            for cmd in self.tasks.get(k, []):
+                parse_task(cmd)
+        for k in self.tasks:
+            if k not in ("on_activate", "on_deactivate"):
+                raise ProfileError(f"Unknown tasks key: {k}")
         tg = self.thermal_guard
         if tg and tg.get("warn_celsius", 0) >= tg.get("critical_celsius", 999):
             raise ProfileError("thermal_guard: warn must be below critical")

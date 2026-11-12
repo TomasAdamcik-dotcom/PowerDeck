@@ -1,70 +1,61 @@
-# PowerDeck — čo chýba / ďalšie kroky
+# PowerDeck — stav a čo ostáva
 
-Stav: v0.1 (jadro + CLI + GTK4 appka). **Zatiaľ netestované na reálnom notebooku** – testy bežia len proti falošnému systému (`tests/test_core.py`).
+Stav: v0.2. Všetko je implementované a pokryté testami (21 testov proti falošnému systému, GUI smoke test v headless Xvfb, `.deb` sa zbuilduje a nainštaluje v kontajneri). **Nič nebolo vyskúšané na reálnom notebooku** – to je hlavný zostávajúci krok.
 
-## 0. Najprv: overenie na reálnom stroji (Ubuntu 26.04)
+## 0. Overenie na reálnom stroji (Ubuntu 26.04) — vyžaduje teba
 
 Bezpečné (nič nemenia):
-- [ ] `python3 -m powerdeck.cli list` a `status` – vypíše sa niečo rozumné?
-- [ ] `python3 -m powerdeck.cli plan RemoteWork` – zodpovedá diff skutočnému stavu?
-- [ ] `python3 -m powerdeck.gtk_app` – otvorí sa okno, stav sa zobrazuje, diff dialóg vyzerá dobre
-- [ ] `gsettings list-keys org.gnome.settings-daemon.plugins.power` – existujú `sleep-inactive-*-type`? (kľúče `lid-close-*` appka zámerne nepoužíva)
+- [ ] `python3 -m powerdeck.cli status` – batéria, teplota, SSH/RDP, Wi‑Fi powersave: zmysluplné hodnoty? (správne `thermal_zone` pre CPU?)
+- [ ] `python3 -m powerdeck.cli plan RemoteWork` / `plan Travel` – zodpovedá diff skutočnému stavu?
+- [ ] `python3 -m powerdeck.gtk_app` – okno, stav, diff dialóg, editor profilov vyzerajú dobre
+- [ ] `gsettings list-keys org.gnome.settings-daemon.plugins.power` a `…desktop.session`/`…screensaver` – existujú kľúče, ktoré appka používa (`sleep-inactive-*-type`, `idle-delay`, `lock-enabled`, `lock-delay`, `night-light-enabled`)?
 - [ ] `man nm-settings-nmcli` – potvrdiť hodnoty `802-11-wireless.powersave` (0 default, 1 ignore, 2 off, 3 on)
+- [ ] `brightnessctl -m` (ak je nainštalovaný) – formát výstupu zodpovedá parseru (`dev,class,cur,pct%,max`)?
+- [ ] `rfkill list bluetooth` – obsahuje „Soft blocked“?
 
 Zmeny (až po záložke vyššie):
-- [ ] `apply RemoteWork` → `pkexec` sa spýta na heslo, vznikne `/etc/systemd/logind.conf.d/99-powerdeck-lid.conf`
-- [ ] Overiť, že reload `logind` cez `systemctl kill -s HUP systemd-logind` naozaj prečíta drop-in (inak treba reštart/odhlásenie)
+- [ ] Inštalácia: `scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb` (alebo `sudo scripts/install-helper.sh`)
+- [ ] `apply RemoteWork` → `pkexec` ukáže náš SK/EN text; vznikne `/etc/systemd/logind.conf.d/99-powerdeck-lid.conf`
+- [ ] Overiť, že reload `logind` cez HUP (`systemctl kill -s HUP systemd-logind`) drop-in naozaj prečíta (inak treba reštart/odhlásenie – potom zmeniť helper)
 - [ ] Test zavretia veka 3–5 min + ping/SSH z telefónu
-- [ ] `restore` vráti pôvodný stav (drop-in zmizne, gsettings/nmcli späť)
-- [ ] Zlyhanie `pkexec` (zrušený dialóg) → appka zobrazí chybu a stav ostane konzistentný
+- [ ] `restore` vráti pôvodný stav (opakované `restore` ide ďalej späť)
+- [ ] Zrušený `pkexec` dialóg → appka ukáže chybu a stav ostane konzistentný
+- [ ] `powerdeck guard --once` a systemd služba: `systemctl --user enable --now powerdeck-guard` – prídu notifikácie pri prekročení prahu?
+- [ ] `powerdeck snapshot` – uloží aktuálne nastavenia ako profil Default (prepíše vstavaný)
 
-## 1. Polkit politika a helper — HOTOVÉ v kóde, treba overiť na stroji
+## 1. Hotové (od v0.1)
 
-Implementované: `data/io.github.powerdeck.policy`, `scripts/install-helper.sh` (inštaluje root-owned `/usr/libexec/powerdeck-helper` + politiku), appka používa len pevnú cestu helpera a pri jeho absencii odmietne aplikovať zmenu.
-- [ ] `sudo scripts/install-helper.sh` na reálnom stroji, potom `apply RemoteWork` → dialóg s naším SK/EN textom
-- [ ] Overiť, že `pkexec` s `exec.path` anotáciou spustí helper s argumentmi bez problémov
-- [ ] GUI: pri chýbajúcom helperi ukázať návod na inštaláciu (dnes iba text chyby v toaste)
-- [ ] `.deb` balík, ktorý helper + politiku nainštaluje automaticky
-- [ ] Po zmene helpera treba skript spustiť znova (helper sa nekopíruje automaticky pri aktualizácii appky)
+- Polkit politika + root-owned helper `/usr/libexec/powerdeck-helper`, inštalačný skript, GUI hlási chýbajúci helper
+- Tethering autoconnect + priorita (`tethering` v profile)
+- Jas, nočný režim, blank/lock timery (`display`), Bluetooth (`bluetooth`)
+- Úlohy `on_activate`/`on_deactivate` – **iba** `systemctl --user start|stop|restart UNIT` (whitelist; validované pri načítaní profilu)
+- Thermal guard (`powerdeck guard`): notifikácia pri `warn`, pri `critical` prepne na power-saver + notifikácia; upozornenie pri nízkej batérii s ignorovaným vekom; udalosti sa spúšťajú len pri zhoršení (bez spamu)
+- Stav: SSH/RDP spojenia, login sessions, skutočný Wi‑Fi powersave (`iw`), priemer cez viac batérií, výber CPU senzora podľa typu zóny
+- Profily `Travel`, `Presentation`; Gaming „návrat“ = `restore`
+- `snapshot` – Default zo skutočného stavu systému
+- Viacnásobný rollback (každé `restore` vráti ďalšiu zálohu)
+- Editor/tvorba profilov v GUI, chybové dialógy, ikona, `.desktop`, AppStream
+- Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
+- CI (`.github/workflows/tests.yml`), `.deb` (`scripts/build-deb.sh`)
 
-## 2. Chýbajúce funkcie zo špecifikácie
+## 2. Ostáva — potrebuje tvoje rozhodnutie alebo reálny HW
 
-- [ ] Autoconnect + `autoconnect-priority` pre tethering profil (NetworkManager)
-- [ ] Jas obrazovky, nočný režim
-- [ ] Bluetooth (rfkill), USB autosuspend (root, závislé na HW)
-- [ ] Úlohy `on_activate` / `on_deactivate` (`systemctl --user …`); profily s úlohami = spúšťanie príkazov → zobraziť v diffe, importované profily nikdy automaticky
-- [ ] `display.blank_after_minutes` / `lock_after_minutes` (gsettings `idle-delay`, `lock-delay`)
-- [ ] Thermal guard: dnes len zobrazenie teploty; chýba notifikácia pri `warn_celsius` a reakcia pri `critical_celsius` (napr. prepnutie na power-saver / návrat na Default)
-- [ ] Ochrana pri nízkej batérii s ignorovaným vekom (upozornenie / návrat na bezpečný profil)
-- [ ] Zobrazenie aktívnych session (SSH/RDP/Claude) v stave – `loginctl`, `ss`
-- [ ] Profily `Travel` a `Presentation`
-- [ ] Gaming: „po skončení návrat na predchádzajúci profil“
-- [ ] Obnova do `Default` ako **snapshot systému** (špecifikácia, sekcia 3 bod 6), nie len „suspend“ natvrdo; teraz `Default` predpokladá štandardné hodnoty GNOME
-- [ ] Zachytenie/obnova viacerých krokov späť (dnes len posledná záloha)
+- [ ] **Licencia** (AppStream momentálne `LicenseRef-proprietary`) a verejné/súkromné repo – rozhodnutie vlastníka
+- [ ] **Maintainer v `.deb`** je placeholder (`noreply@example.invalid`)
+- [ ] **USB autosuspend** – závislé na HW (sysfs/udev/TLP, root); netýka sa bezpečne bez konkrétneho zariadenia
+- [ ] **Voľba sietí zo zoznamu uložených NM profilov** v editore (dnes text oddelený čiarkou) – dá sa, ale je to UX rozhodnutie
+- [ ] **Mazanie vlastných profilov** z GUI
+- [ ] **Gaming**: automatický návrat po skončení hry (detekcia procesu) – dnes ručne cez Restore
+- [ ] **GUI testy v CI** (headless GTK vyžaduje balíky na runneri); smoke test je len ručný (`xvfb-run`)
+- [ ] **gettext** namiesto slovníka v `i18n.py` (až keď sa texty ustália)
+- [ ] **Edit sloty špecifické pre dock/AC** v editore (dnes jedna hodnota pre všetky tri stavy veka)
+- [ ] Voliteľne: GNOME Shell extension/indikátor v paneli (po v1)
+- [ ] Odmietnuť/zvážiť Flatpak: sandbox bráni `nmcli`/`pkexec`
 
-## 3. GUI
-
-- [ ] Editor/tvorba vlastných profilov (dnes len čítanie vstavaných + JSON v `~/.config/powerdeck/profiles/`)
-- [ ] Zobrazenie `wifi_powersave` skutočného stavu (`iw dev … get power_save`)
-- [ ] Voľba preferovaných sietí zo zoznamu uložených NM profilov
-- [ ] Správne hlásenia chýb (dialóg namiesto toastu pri zlyhaní)
-- [ ] Ikona, `.desktop` súbor, AppStream metadata
-- [ ] Voliteľne: GNOME Shell extension / indikátor v paneli (až po v1)
-- [ ] Preklady cez gettext (dnes jednoduchý slovník v `i18n.py`)
-
-## 4. Kvalita a infraštruktúra
-
-- [ ] Logy do `~/.local/state/powerdeck/logs/` (adresár je len v špecifikácii)
-- [ ] Testy GUI (headless cez `xvfb-run`), integračné testy helpera v kontajneri
-- [ ] CI (GitHub Actions: pytest)
-- [ ] Zvážiť odstránenie hardkódovaných predpokladov: `thermal_zone*` ≠ vždy CPU, `BAT*` – viac batérií
-- [ ] Balíčkovanie (`.deb`/Flatpak – pozor: Flatpak sandbox bráni `nmcli`/`pkexec`, pravdepodobne nevhodný)
-- [ ] Licencia, verejné/súkromné repo
-
-## 5. Otvorené otázky (zo SPECIFICATION.md)
+## 3. Otvorené otázky
 
 1. Verzia GNOME na Ubuntu 26.04 a dostupné gsettings kľúče
 2. HUP vs. reštart `systemd-logind` – čo je bezpečné?
 3. RDP (`gnome-remote-desktop`) so zavretým vekom a zamknutou obrazovkou
 4. HW používateľa: senzory teploty, `power-profiles-daemon` vs. TLP
-5. GTK appka vs. extension (rozhodnuté pre v1: GTK appka + CLI)
+5. Thermal guard reaguje len prepnutím na power-saver – stačí, alebo má pri critical aj aplikovať Default?
