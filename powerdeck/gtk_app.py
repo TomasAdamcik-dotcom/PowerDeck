@@ -282,6 +282,12 @@ class App(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID)
 
+    def do_startup(self):
+        Adw.Application.do_startup(self)
+        # Follow the system light/dark preference (like GNOME Calculator / Text Editor)
+        # and switch live when the user changes it. No hardcoded colours anywhere.
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
+
     def do_activate(self):
         (self.props.active_window or MainWindow(self)).present()
 
