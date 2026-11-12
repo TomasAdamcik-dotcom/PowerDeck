@@ -116,3 +116,15 @@ def test_monitor_sample_and_csv(fake_cpu, tmp_path, monkeypatch):
     monitor.run_cli(0.01, 0.05, str(path))
     rows = list(csv.DictReader(open(path)))
     assert rows and set(rows[0]) == set(monitor.CSV_FIELDS)
+
+
+def test_rucksack_is_strictest(fake_cpu):
+    r, t = BY["Rucksack"], BY["Travel"]
+    r.validate()
+    assert r.lid == {"battery": "ignore", "ac": "ignore", "docked": "ignore"}
+    assert r.cpu["turbo"] is False and r.cpu["max_freq_percent"] < t.cpu["max_freq_percent"]
+    assert r.power_mode == "power-saver" and r.bluetooth is False
+    assert r.thermal_guard["warn_celsius"] < t.thermal_guard["warn_celsius"]
+    assert r.thermal_guard["critical_celsius"] < t.thermal_guard["critical_celsius"]
+    plan = engine.make_plan(r, lambda a: (127, ""))
+    assert "CPU max frequency: 100% → 50%" in plan.diff_text()

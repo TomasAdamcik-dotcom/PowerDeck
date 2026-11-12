@@ -32,7 +32,7 @@ Najprv bez zmien:
 
 Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng --cpu 0 --timeout 120s` alebo reálna Claude/dev úloha):
 1. `powerdeck monitor --interval 2 --duration 150 --csv /tmp/default.csv` počas záťaže v profile **Default**
-2. `powerdeck apply Travel` (turbo off + max 70 %) a to isté: `--csv /tmp/travel.csv`
+2. `powerdeck apply Travel` (turbo off + max 70 %) a to isté: `--csv /tmp/travel.csv`; potom to isté pre `Rucksack` (max 50 %)
 3. Porovnať teplotu, frekvenciu, príkon (CSV stĺpce `temp_c`, `freq_mhz`, `power_w`, `fan_rpm`) → aká je strata výkonu vs. zníženie teploty? Podľa toho doladiť 70 % / turbo v profiloch.
 - [ ] `powerdeck restore` vráti turbo a max. frekvenciu (over cez monitor: `limit 100%`, `turbo on`)
 - [ ] Po reštarte sú limity späť na predvolené (sysfs sa nezachováva) – to je zámer; ak ich chceš trvalé, treba systemd službu pri štarte
@@ -47,12 +47,12 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - Úlohy `on_activate`/`on_deactivate` – **iba** `systemctl --user start|stop|restart UNIT` (whitelist; validované pri načítaní profilu)
 - Thermal guard (`powerdeck guard`): notifikácia pri `warn`, pri `critical` prepne na power-saver + notifikácia; upozornenie pri nízkej batérii s ignorovaným vekom; udalosti sa spúšťajú len pri zhoršení (bez spamu)
 - Stav: SSH/RDP spojenia, login sessions, skutočný Wi‑Fi powersave (`iw`), priemer cez viac batérií, výber CPU senzora podľa typu zóny
-- Profily `Travel`, `Presentation`; Gaming „návrat“ = `restore`
+- Profily `Travel`, `Rucksack`, `Presentation`; Gaming „návrat“ = `restore`
 - `snapshot` – Default zo skutočného stavu systému
 - Viacnásobný rollback (každé `restore` vráti ďalšiu zálohu)
 - Editor/tvorba profilov v GUI, chybové dialógy, ikona, `.desktop`, AppStream
 - Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
-- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off + 70 %, Default/Gaming ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
+- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off + 70 %, **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Gaming ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
 - Monitoring: `powerdeck monitor [--csv FILE] [--duration N]` + živá skupina v GUI (teplota, frekvencia, limit, turbo, záťaž, príkon, ventilátor)
 - CI (`.github/workflows/tests.yml`), `.deb` (`scripts/build-deb.sh`)
 
