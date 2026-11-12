@@ -1,0 +1,16 @@
+[project]
+name = "powerdeck"
+version = "0.1.0"
+description = "PowerDeck — Linux workstation profiles"
+requires-python = ">=3.11"
+
+[project.scripts]
+powerdeck = "powerdeck.cli:main"
+powerdeck-gtk = "powerdeck.gtk_app:main"
+
+[tool.setuptools]
+packages = ["powerdeck"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
