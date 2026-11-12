@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>PowerDeck</vendor>
+  <vendor_url>https://github.com/TomasAdamcik-dotcom/PowerDeck</vendor_url>
+
+  <action id="io.github.powerdeck.manage-lid">
+    <description>Change laptop lid-close behaviour</description>
+    <description xml:lang="sk">Zmeniť správanie notebooku pri zavretí veka</description>
+    <message>Authentication is required to change what happens when the laptop lid is closed</message>
+    <message xml:lang="sk">Na zmenu správania pri zavretí veka notebooku je potrebné overenie</message>
+    <icon_name>preferences-system-power</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/powerdeck-helper</annotate>
+  </action>
+</policyconfig>

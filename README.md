@@ -8,6 +8,14 @@ Linux workstation profiles for Ubuntu/GNOME. See [SPECIFICATION.md](SPECIFICATIO
 - Backends: logind lid drop-in (via `pkexec` helper), GNOME auto-suspend, NetworkManager Wi‑Fi powersave, power-profiles-daemon
 - Not yet implemented: see [TODO.md](TODO.md) (untested on real hardware, polkit policy, more backends, profile editor…)
 
+## Install admin helper (needed for lid settings)
+
+```bash
+sudo scripts/install-helper.sh            # remove with: sudo scripts/install-helper.sh --uninstall
+```
+
+Installs a root-owned `/usr/libexec/powerdeck-helper` and a polkit policy. The helper can only write/remove one logind drop-in with whitelisted values.
+
 ## Run
 
 ```bash

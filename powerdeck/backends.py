@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import sys
 
 from . import helper
 from .changes import Change
@@ -18,8 +17,17 @@ def _unquote(s: str) -> str:
     return s.strip().strip("'")
 
 
+# Fixed, root-owned path matched by the polkit policy (data/*.policy).
+# Never fall back to running code from the user's own directories as root.
+HELPER_PATH = "/usr/libexec/powerdeck-helper"
+
+
+def helper_installed() -> bool:
+    return os.path.isfile(HELPER_PATH) and os.access(HELPER_PATH, os.X_OK)
+
+
 def _helper_argv(*args: str) -> list[str]:
-    return ["pkexec", sys.executable, "-m", "powerdeck.helper", *args]
+    return ["pkexec", HELPER_PATH, *args]
 
 
 # -- GNOME automatic suspend ------------------------------------------------

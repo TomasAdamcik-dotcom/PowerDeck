@@ -1,4 +1,6 @@
-"""Privileged helper, run via ``pkexec python3 -m powerdeck.helper …``.
+#!/usr/bin/python3
+"""Privileged helper, installed as /usr/libexec/powerdeck-helper (root-owned)
+and run via ``pkexec /usr/libexec/powerdeck-helper …`` (see data/*.policy).
 
 It can ONLY manage the PowerDeck logind drop-in. It never executes
 arbitrary commands and validates every argument against a whitelist.
@@ -42,8 +44,12 @@ def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True) -> 
             print(e, file=sys.stderr)
             return 2
         os.makedirs(dropin_dir, exist_ok=True)
-        with open(os.path.join(dropin_dir, DROPIN), "w") as f:
+        target = os.path.join(dropin_dir, DROPIN)
+        tmp = target + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        with os.fdopen(fd, "w") as f:
             f.write(content)
+        os.replace(tmp, target)  # atomic: never leaves a half-written config
     else:
         print("usage: set-lid BATTERY AC DOCKED | remove-lid", file=sys.stderr)
         return 2

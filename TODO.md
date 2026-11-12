@@ -18,13 +18,14 @@ Zmeny (až po záložke vyššie):
 - [ ] `restore` vráti pôvodný stav (drop-in zmizne, gsettings/nmcli späť)
 - [ ] Zlyhanie `pkexec` (zrušený dialóg) → appka zobrazí chybu a stav ostane konzistentný
 
-## 1. Polkit politika (bezpečnosť/UX)
+## 1. Polkit politika a helper — HOTOVÉ v kóde, treba overiť na stroji
 
-Bez nej `pkexec` funguje, ale ukáže generický dialóg a vyžaduje cestu k interpreteru.
-- [ ] `data/io.github.powerdeck.policy` – akcia `io.github.powerdeck.set-lid` s popisom po slovensky/anglicky, `auth_admin_keep`
-- [ ] Nainštalovať helper na pevnú cestu (napr. `/usr/libexec/powerdeck-helper`, root-owned) a v policy použiť `org.freedesktop.policykit.exec.path` na túto cestu – **nie** na `python3`
-- [ ] `backends._helper_argv` prepnúť zo `sys.executable -m powerdeck.helper` na túto pevnú cestu (teraz by pkexec spustil modul z používateľom zapisovateľného miesta = riziko eskalácie)
-- [ ] Inštalačný skript / balík (`.deb`) ktorý to všetko nainštaluje
+Implementované: `data/io.github.powerdeck.policy`, `scripts/install-helper.sh` (inštaluje root-owned `/usr/libexec/powerdeck-helper` + politiku), appka používa len pevnú cestu helpera a pri jeho absencii odmietne aplikovať zmenu.
+- [ ] `sudo scripts/install-helper.sh` na reálnom stroji, potom `apply RemoteWork` → dialóg s naším SK/EN textom
+- [ ] Overiť, že `pkexec` s `exec.path` anotáciou spustí helper s argumentmi bez problémov
+- [ ] GUI: pri chýbajúcom helperi ukázať návod na inštaláciu (dnes iba text chyby v toaste)
+- [ ] `.deb` balík, ktorý helper + politiku nainštaluje automaticky
+- [ ] Po zmene helpera treba skript spustiť znova (helper sa nekopíruje automaticky pri aktualizácii appky)
 
 ## 2. Chýbajúce funkcie zo špecifikácie
 

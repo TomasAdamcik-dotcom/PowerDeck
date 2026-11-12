@@ -54,6 +54,9 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
     backup_dir = backup_dir or paths.backups_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
+    if plan.needs_admin and not backends.helper_installed():
+        return [f"Admin helper not installed ({backends.HELPER_PATH}). "
+                "Run: sudo scripts/install-helper.sh"]
     snap = backup_dir / f"{stamp}-{plan.profile}.json"
     n = 1
     while snap.exists():  # two applies within the same second

@@ -44,6 +44,7 @@ class FakeSystem:
 def lid_dir(monkeypatch, tmp_path):
     d = tmp_path / "logind"
     monkeypatch.setattr(helper, "DROPIN_DIR", str(d))
+    monkeypatch.setattr(backends, "helper_installed", lambda: True)
     return d
 
 
@@ -125,3 +126,34 @@ def test_lid_plan_existing_dropin_and_default(lid_dir):
     assert ch.apply_argv[-1] == "remove-lid"
     assert ch.revert_argv[-4:] == ["set-lid", "ignore", "ignore", "ignore"]
     assert backends.plan_lid(Profile(name="NoLid"), run) == []     # unmanaged
+
+
+def test_policy_matches_helper_path_and_is_valid_xml():
+    import xml.etree.ElementTree as ET
+    from pathlib import Path
+    root = ET.parse(Path(__file__).parent.parent / "data" / "io.github.powerdeck.policy").getroot()
+    ann = root.find(".//annotate[@key='org.freedesktop.policykit.exec.path']")
+    assert ann is not None and ann.text == backends.HELPER_PATH
+    assert backends.HELPER_PATH.startswith("/usr/libexec/")   # root-owned location
+    assert root.find(".//allow_active").text == "auth_admin_keep"
+
+
+def test_privileged_changes_use_fixed_helper_not_python():
+    ch = backends.plan_lid(BY["RemoteWork"], FakeSystem())[0]
+    assert ch.apply_argv[:2] == ["pkexec", backends.HELPER_PATH]
+    assert "python" not in " ".join(ch.apply_argv)
+
+
+def test_apply_refuses_without_installed_helper(tmp_path, monkeypatch):
+    monkeypatch.setattr(backends, "helper_installed", lambda: False)
+    sysm = FakeSystem()
+    plan = engine.make_plan(BY["RemoteWork"], sysm)
+    errs = engine.apply_plan(plan, sysm, tmp_path / "b", tmp_path / "a.json")
+    assert errs and "install-helper" in errs[0]
+    assert sysm.g["sleep-inactive-ac-type"] == "suspend"   # nothing was changed
+
+
+def test_helper_file_is_atomic_and_world_readable(tmp_path):
+    helper.main(["set-lid", "lock", "ignore", "suspend"], str(tmp_path), reload=False)
+    f = tmp_path / helper.DROPIN
+    assert oct(f.stat().st_mode & 0o777) == "0o644" and not (tmp_path / (helper.DROPIN + ".tmp")).exists()
