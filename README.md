@@ -2,7 +2,7 @@
 
 Linux workstation profiles for Ubuntu/GNOME. See [SPECIFICATION.md](SPECIFICATION.md).
 
-## Status (v0.2 – untested on real hardware)
+## Status (v0.3 – untested on real hardware)
 
 Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mode, display timers/brightness/night light, Bluetooth and whitelisted user-service tasks; thermal/battery guard; GTK4 app with profile editor; CLI; `.deb` build. See [TODO.md](TODO.md) for what is left and the real-hardware checklist.
 
@@ -25,6 +25,7 @@ scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb   # installs app
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 python3 -m powerdeck.gtk_app        # GUI
+python3 -m powerdeck.cli monitor --csv out.csv --duration 60   # temperature/frequency/load/power log
 python3 -m powerdeck.cli list       # CLI: list | status | plan NAME | apply NAME | restore | snapshot | guard
 pytest                              # tests (fake system, no root needed)
 ```

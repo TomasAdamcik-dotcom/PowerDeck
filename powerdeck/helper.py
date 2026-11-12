@@ -31,7 +31,47 @@ def _reload_logind() -> None:
     subprocess.run(["systemctl", "kill", "-s", "HUP", "systemd-logind"], check=False)
 
 
-def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True) -> int:
+CPU_ROOT = "/sys/devices/system/cpu"
+
+
+def set_turbo(on: bool, root: str = CPU_ROOT) -> int:
+    for path, val in ((f"{root}/intel_pstate/no_turbo", "0" if on else "1"),
+                      (f"{root}/cpufreq/boost", "1" if on else "0")):
+        if os.path.exists(path):
+            with open(path, "w") as f:
+                f.write(val)
+            return 0
+    print("turbo control not available on this CPU", file=sys.stderr)
+    return 3
+
+
+def set_max_percent(pct: int, root: str = CPU_ROOT) -> int:
+    """Limit scaling_max_freq to pct % of each core's hardware maximum."""
+    import glob
+    dirs = sorted(glob.glob(f"{root}/cpu[0-9]*/cpufreq"))
+    if not dirs:
+        print("cpufreq not available", file=sys.stderr)
+        return 3
+    failed = 0
+    for d in dirs:
+        try:
+            hw = int(open(f"{d}/cpuinfo_max_freq").read())
+            lo = int(open(f"{d}/scaling_min_freq").read())
+            with open(f"{d}/scaling_max_freq", "w") as f:
+                f.write(str(max(lo, hw * pct // 100)))
+        except (OSError, ValueError) as e:
+            print(f"{d}: {e}", file=sys.stderr)
+            failed += 1
+    return 1 if failed else 0
+
+
+def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True,
+         cpu_root: str = CPU_ROOT) -> int:
+    if len(argv) == 2 and argv[0] == "set-cpu-turbo" and argv[1] in ("on", "off"):
+        return set_turbo(argv[1] == "on", cpu_root)
+    if (len(argv) == 2 and argv[0] == "set-cpu-max-percent" and argv[1].isdigit()
+            and 10 <= int(argv[1]) <= 100):
+        return set_max_percent(int(argv[1]), cpu_root)
     if len(argv) == 1 and argv[0] == "remove-lid":
         try:
             os.remove(os.path.join(dropin_dir, DROPIN))
@@ -51,7 +91,7 @@ def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True) -> 
             f.write(content)
         os.replace(tmp, target)  # atomic: never leaves a half-written config
     else:
-        print("usage: set-lid BATTERY AC DOCKED | remove-lid", file=sys.stderr)
+        print("usage: set-lid B AC D | remove-lid | set-cpu-turbo on|off | set-cpu-max-percent 10-100", file=sys.stderr)
         return 2
     if reload:
         _reload_logind()

@@ -49,6 +49,7 @@ class Profile:
     tethering: dict = field(default_factory=dict)  # connection, priority
     display: dict = field(default_factory=dict)  # blank_after_minutes, lock_after_minutes, brightness_percent, night_light
     bluetooth: bool | None = None
+    cpu: dict = field(default_factory=dict)  # turbo (bool), max_freq_percent (10-100)
     builtin: bool = False
 
     def validate(self) -> None:
@@ -87,6 +88,12 @@ class Profile:
             raise ProfileError("display.brightness_percent invalid")
         if "night_light" in d and not isinstance(d["night_light"], bool):
             raise ProfileError("display.night_light invalid")
+        for k, v in self.cpu.items():
+            if k == "turbo" and isinstance(v, bool):
+                continue
+            if k == "max_freq_percent" and isinstance(v, int) and not isinstance(v, bool) and 10 <= v <= 100:
+                continue
+            raise ProfileError(f"Invalid cpu setting: {k}={v!r}")
         if self.bluetooth not in (None, True, False):
             raise ProfileError("bluetooth must be true/false")
         for k in ("on_activate", "on_deactivate"):

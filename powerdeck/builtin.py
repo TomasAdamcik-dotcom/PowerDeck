@@ -9,6 +9,7 @@ BUILTIN_PROFILES = [
         automatic_suspend={"battery": True, "ac": True},
         wifi_powersave="default",
         power_mode="balanced",
+        cpu={"turbo": True, "max_freq_percent": 100},
         builtin=True,
     ),
     Profile(
@@ -29,6 +30,7 @@ BUILTIN_PROFILES = [
         wifi_powersave="off",
         power_mode="power-saver",
         display={"blank_after_minutes": 1, "night_light": False},
+        cpu={"turbo": False, "max_freq_percent": 70},
         thermal_guard={"warn_celsius": 80, "critical_celsius": 88},
         builtin=True,
     ),
@@ -49,6 +51,7 @@ BUILTIN_PROFILES = [
         power_mode="power-saver",
         display={"brightness_percent": 40},
         bluetooth=False,
+        cpu={"turbo": False},
         builtin=True,
     ),
     Profile(
@@ -57,6 +60,7 @@ BUILTIN_PROFILES = [
         automatic_suspend={"battery": True, "ac": False},
         wifi_powersave="default",
         power_mode="performance",
+        cpu={"turbo": True, "max_freq_percent": 100},
         builtin=True,
     ),
 ]

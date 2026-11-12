@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 from . import helper
+from . import cpu
 from .changes import Change
 from .profile import Profile, parse_task
 from .runner import Runner
@@ -176,6 +177,26 @@ def plan_display(p: Profile, run: Runner) -> list[Change]:
     return out
 
 
+# -- CPU limits (turbo, max frequency); writes go through the root helper -
+def plan_cpu(p: Profile, run: Runner) -> list[Change]:
+    out: list[Change] = []
+    if "turbo" in p.cpu:
+        cur = cpu.read_turbo()
+        if cur is not None and cur != p.cpu["turbo"]:
+            on, off = _helper_argv("set-cpu-turbo", "on"), _helper_argv("set-cpu-turbo", "off")
+            out.append(Change("cpu", "CPU turbo/boost", "on" if cur else "off",
+                              "on" if p.cpu["turbo"] else "off",
+                              on if p.cpu["turbo"] else off, on if cur else off, privileged=True))
+    if "max_freq_percent" in p.cpu:
+        cur = cpu.read_max_percent()
+        new = p.cpu["max_freq_percent"]
+        if cur is not None and cur != new:
+            out.append(Change("cpu", "CPU max frequency", f"{cur}%", f"{new}%",
+                              _helper_argv("set-cpu-max-percent", str(new)),
+                              _helper_argv("set-cpu-max-percent", str(cur)), privileged=True))
+    return out
+
+
 # -- Bluetooth (rfkill) ----------------------------------------------------
 def plan_bluetooth(p: Profile, run: Runner) -> list[Change]:
     if p.bluetooth is None:
@@ -213,4 +234,4 @@ def plan_tasks(p: Profile, run: Runner, previous: Profile | None = None) -> list
 
 
 BACKENDS = (plan_lid, plan_auto_suspend, plan_wifi, plan_tethering, plan_power_mode,
-            plan_display, plan_bluetooth)
+            plan_display, plan_bluetooth, plan_cpu)

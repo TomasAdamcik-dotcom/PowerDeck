@@ -18,6 +18,10 @@ def main(argv=None) -> int:
     sub.add_parser("status")
     sub.add_parser("restore")
     sub.add_parser("snapshot", help="save current system settings as the Default profile")
+    m = sub.add_parser("monitor", help="live temperature/frequency/load/power monitor")
+    m.add_argument("--interval", type=float, default=2.0)
+    m.add_argument("--duration", type=float, help="stop after N seconds")
+    m.add_argument("--csv", help="also write samples to this CSV file")
     g = sub.add_parser("guard", help="run thermal/battery guard")
     g.add_argument("--once", action="store_true")
     g.add_argument("--interval", type=int, default=30)
@@ -39,6 +43,10 @@ def main(argv=None) -> int:
         from dataclasses import asdict
         for k, v in asdict(read_status()).items():
             print(f"{k}: {v}")
+        return 0
+    if a.cmd == "monitor":
+        from . import monitor
+        monitor.run_cli(a.interval, a.duration, a.csv)
         return 0
     if a.cmd == "snapshot":
         from .profile import save_profile

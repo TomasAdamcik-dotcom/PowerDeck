@@ -1,6 +1,6 @@
 # PowerDeck — stav a čo ostáva
 
-Stav: v0.2. Všetko je implementované a pokryté testami (21 testov proti falošnému systému, GUI smoke test v headless Xvfb, `.deb` sa zbuilduje a nainštaluje v kontajneri). **Nič nebolo vyskúšané na reálnom notebooku** – to je hlavný zostávajúci krok.
+Stav: v0.3. Všetko je implementované a pokryté testami (35 testov proti falošnému systému, GUI smoke test v headless Xvfb, `.deb` sa zbuilduje a nainštaluje v kontajneri). **Nič nebolo vyskúšané na reálnom notebooku** – to je hlavný zostávajúci krok.
 
 ## 0. Overenie na reálnom stroji (Ubuntu 26.04) — vyžaduje teba
 
@@ -23,6 +23,22 @@ Zmeny (až po záložke vyššie):
 - [ ] `powerdeck guard --once` a systemd služba: `systemctl --user enable --now powerdeck-guard` – prídu notifikácie pri prekročení prahu?
 - [ ] `powerdeck snapshot` – uloží aktuálne nastavenia ako profil Default (prepíše vstavaný)
 
+## 0b. Test limitu CPU a monitoringu (nové, treba reálny HW)
+
+Najprv bez zmien:
+- [ ] `cat /sys/devices/system/cpu/intel_pstate/no_turbo` (Intel) alebo `cat /sys/devices/system/cpu/cpufreq/boost` (AMD) – existuje aspoň jeden? Ak nie, turbo sa preskočí (stav `n/a`)
+- [ ] `ls /sys/devices/system/cpu/cpu0/cpufreq/` – sú `scaling_max_freq`, `cpuinfo_max_freq`, `scaling_cur_freq`? (pozor: pri `intel_pstate` v aktívnom režime sa `scaling_max_freq` správa trochu inak)
+- [ ] `powerdeck monitor --duration 10` – zmysluplné hodnoty? Je `power`/`fan` k dispozícii (závisí od modelu; `n/a` je v poriadku)
+
+Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng --cpu 0 --timeout 120s` alebo reálna Claude/dev úloha):
+1. `powerdeck monitor --interval 2 --duration 150 --csv /tmp/default.csv` počas záťaže v profile **Default**
+2. `powerdeck apply Travel` (turbo off + max 70 %) a to isté: `--csv /tmp/travel.csv`
+3. Porovnať teplotu, frekvenciu, príkon (CSV stĺpce `temp_c`, `freq_mhz`, `power_w`, `fan_rpm`) → aká je strata výkonu vs. zníženie teploty? Podľa toho doladiť 70 % / turbo v profiloch.
+- [ ] `powerdeck restore` vráti turbo a max. frekvenciu (over cez monitor: `limit 100%`, `turbo on`)
+- [ ] Po reštarte sú limity späť na predvolené (sysfs sa nezachováva) – to je zámer; ak ich chceš trvalé, treba systemd službu pri štarte
+- [ ] Prvý `pkexec` dialóg ukáže nový text „Change laptop power settings (lid behaviour, CPU limits)“; po zmene politiky treba znova `sudo scripts/install-helper.sh` (alebo nový `.deb`)
+- [ ] GUI: skupina „Monitoring“ sa obnovuje každé 2 s, level bary fungujú, nespomaľuje to appku
+
 ## 1. Hotové (od v0.1)
 
 - Polkit politika + root-owned helper `/usr/libexec/powerdeck-helper`, inštalačný skript, GUI hlási chýbajúci helper
@@ -36,6 +52,8 @@ Zmeny (až po záložke vyššie):
 - Viacnásobný rollback (každé `restore` vráti ďalšiu zálohu)
 - Editor/tvorba profilov v GUI, chybové dialógy, ikona, `.desktop`, AppStream
 - Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
+- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off + 70 %, Default/Gaming ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
+- Monitoring: `powerdeck monitor [--csv FILE] [--duration N]` + živá skupina v GUI (teplota, frekvencia, limit, turbo, záťaž, príkon, ventilátor)
 - CI (`.github/workflows/tests.yml`), `.deb` (`scripts/build-deb.sh`)
 
 ## 2. Ostáva — potrebuje tvoje rozhodnutie alebo reálny HW

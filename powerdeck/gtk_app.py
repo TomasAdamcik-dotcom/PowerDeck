@@ -11,6 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from . import backends, engine  # noqa: E402
+from .monitor import Monitor  # noqa: E402
 from .i18n import _  # noqa: E402
 from .logs import setup_logging  # noqa: E402
 from .profile import LID_ACTIONS, POWER_MODES, Profile, ProfileError, load_profiles, save_profile  # noqa: E402
@@ -62,6 +63,23 @@ class MainWindow(Adw.ApplicationWindow):
             grp.add(r)
         content.add(grp)
 
+        # -- live monitor (sysfs only, refreshed every 2 s)
+        mgrp = Adw.PreferencesGroup(title=_("Monitor"))
+        self.monitor = Monitor()
+        self.mrows, self.mbars = {}, {}
+        for key, title, bar in (("temp", _("CPU temperature"), True), ("freq", _("CPU frequency"), True),
+                                ("load", _("CPU load"), True), ("power", _("Power draw"), False),
+                                ("fan", _("Fan"), False)):
+            r = Adw.ActionRow(title=title)
+            r.add_css_class("property")
+            if bar:
+                lb = Gtk.LevelBar(min_value=0, max_value=100, valign=Gtk.Align.CENTER, width_request=120)
+                r.add_suffix(lb)
+                self.mbars[key] = lb
+            self.mrows[key] = r
+            mgrp.add(r)
+        content.add(mgrp)
+
         actions = Adw.PreferencesGroup()
         box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=6)
         self.apply_btn = Gtk.Button(label=_("Apply…"), css_classes=["suggested-action", "pill"],
@@ -82,6 +100,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.set_content(view)
         self.refresh_status()
         GLib.timeout_add_seconds(10, self._tick)
+        GLib.timeout_add_seconds(2, self._monitor_tick)
 
     # -- helpers
     def _fill_list(self):
@@ -110,6 +129,24 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _tick(self):
         self.refresh_status()
+        return True
+
+    def _monitor_tick(self):
+        s = self.monitor.sample()
+        na = _("unknown")
+        self.mrows["temp"].set_subtitle(na if s.temp_c is None else f"{s.temp_c:.0f} °C")
+        self.mbars["temp"].set_value(max(0, min(100, s.temp_c or 0)))
+        if s.freq_mhz is None:
+            self.mrows["freq"].set_subtitle(na)
+        else:
+            lim = f" · {_('limit')} {s.limit_percent} %" if s.limit_percent else ""
+            turbo = "" if s.turbo is None else f" · turbo {'on' if s.turbo else 'off'}"
+            self.mrows["freq"].set_subtitle(f"{s.freq_mhz:.0f} MHz ({s.freq_percent:.0f} %){lim}{turbo}")
+        self.mbars["freq"].set_value(s.freq_percent or 0)
+        self.mrows["load"].set_subtitle(na if s.load_percent is None else f"{s.load_percent:.0f} %")
+        self.mbars["load"].set_value(s.load_percent or 0)
+        self.mrows["power"].set_subtitle(na if s.power_w is None else f"{s.power_w:+.1f} W")
+        self.mrows["fan"].set_subtitle(na if s.fan_rpm is None else f"{s.fan_rpm} rpm")
         return True
 
     def refresh_status(self):
@@ -229,8 +266,20 @@ class ProfileEditor(Adw.Window):
         self.bt = _combo(bt, 0 if p.bluetooth is None else (1 if p.bluetooth else 2))
         self.bt.set_title("Bluetooth")
 
+        tb = [_NONE, "on", "off"]
+        t = p.cpu.get("turbo")
+        self.turbo = _combo(tb, 0 if t is None else (1 if t else 2))
+        self.turbo.set_title(_("CPU turbo"))
+        self.fmax_opts = [_NONE, *[f"{v} %" for v in (100, 90, 80, 70, 60, 50, 40, 30)]]
+        m = p.cpu.get("max_freq_percent")
+        idx = self.fmax_opts.index(f"{m} %") if f"{m} %" in self.fmax_opts else 0
+        self.fmax = _combo(self.fmax_opts, idx)
+        self.fmax.set_title(_("CPU max frequency"))
+        self._fmax_custom = m if m is not None and idx == 0 else None  # keep unusual values untouched
+
         grp = Adw.PreferencesGroup()
-        for w in (self.name, self.desc, self.lid, self.auto, self.wifi, self.mode, self.nets, self.teth, self.bt):
+        for w in (self.name, self.desc, self.lid, self.auto, self.wifi, self.mode, self.nets, self.teth,
+                  self.bt, self.turbo, self.fmax):
             grp.add(w)
         page = Adw.PreferencesPage()
         page.add(grp)
@@ -265,8 +314,17 @@ class ProfileEditor(Adw.Window):
         d["tethering"] = {"connection": t, "priority": old.tethering.get("priority", 100)} if t else {}
         b = self.bt.get_selected()
         d["bluetooth"] = None if b == 0 else b == 1
-        p = Profile.from_dict(d)
-        return p
+        cpu = {}
+        tb = self.turbo.get_selected()
+        if tb:
+            cpu["turbo"] = tb == 1
+        fm = self.fmax.get_selected()
+        if fm:
+            cpu["max_freq_percent"] = int(self.fmax_opts[fm].split()[0])
+        elif self._fmax_custom is not None:
+            cpu["max_freq_percent"] = self._fmax_custom
+        d["cpu"] = cpu
+        return Profile.from_dict(d)
 
     def _save(self, *_a):
         try:
