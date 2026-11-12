@@ -6,7 +6,7 @@ Linux workstation profiles for Ubuntu/GNOME. See [SPECIFICATION.md](SPECIFICATIO
 
 - `powerdeck/` – core (profiles, plan/diff, snapshot, apply, rollback), CLI, GTK4/libadwaita app
 - Backends: logind lid drop-in (via `pkexec` helper), GNOME auto-suspend, NetworkManager Wi‑Fi powersave, power-profiles-daemon
-- Not yet: polkit policy file, brightness/Bluetooth/USB, tasks, thermal guard reactions, profile editor in the GUI
+- Not yet implemented: see [TODO.md](TODO.md) (untested on real hardware, polkit policy, more backends, profile editor…)
 
 ## Run
 
