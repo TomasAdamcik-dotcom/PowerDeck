@@ -17,7 +17,8 @@ Zmeny (až po záložke vyššie):
 - [x] Inštalácia: `scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb` (alebo `sudo scripts/install-helper.sh`)
 - [x] `apply RemoteWork` → `pkexec` ukáže náš SK/EN text; vznikne `/etc/systemd/logind.conf.d/99-powerdeck-lid.conf`
 - [x] Overiť, že reload `logind` cez HUP (`systemctl kill -s HUP systemd-logind`) drop-in naozaj prečíta (inak treba reštart/odhlásenie – potom zmeniť helper) ✓ `busctl` hneď hlási `HandleLidSwitch=ignore`
-- [ ] Test zavretia veka 3–5 min + ping/SSH z telefónu
+- [ ] Test zavretia veka 3–5 min + ping/SSH z telefónu – systém nezaspí ✓; RDP (desktop sharing) padal: gsd-power pri zatvorenom veku a zablokovanom suspende (Claude Desktop inhibitor) zapne šetrič a gnome-shell v režime `unlock-dialog` zakáže remote desktop. Riešenie: `remote_access` profily + guard zruší šetrič (overiť s vekom), Remote Login ako robustná cesta
+- [ ] Zapnúť a otestovať GNOME Remote Login (Nastavenia → Systém → Vzdialená plocha → Vzdialené prihlásenie)
 - [x] `restore` vráti pôvodný stav (opakované `restore` ide ďalej späť)
 - [ ] Zrušený `pkexec` dialóg → appka ukáže chybu a stav ostane konzistentný
 - [ ] `powerdeck guard --once` a systemd služba: `systemctl --user enable --now powerdeck-guard` – prídu notifikácie pri prekročení prahu?

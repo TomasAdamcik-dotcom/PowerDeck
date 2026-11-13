@@ -12,7 +12,8 @@ class FakeSystem:
     """Fake command runner holding a tiny in-memory system state."""
 
     def __init__(self):
-        self.g = {"sleep-inactive-battery-type": "suspend", "sleep-inactive-ac-type": "suspend"}
+        self.g = {"sleep-inactive-battery-type": "suspend", "sleep-inactive-ac-type": "suspend",
+                  "lock-enabled": "true", "idle-delay": "uint32 300"}
         self.wifi = {"MojTelefon": "0"}
         self.mode = "balanced"
         self.calls = []

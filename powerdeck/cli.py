@@ -68,6 +68,8 @@ def main(argv=None) -> int:
         return 2
     plan = engine.make_plan(profiles[a.name], previous=profiles.get(engine.active_profile() or ""))
     print(plan.diff_text())
+    if profiles[a.name].remote_access:
+        print("\n".join(guard.remote_access_notes()))
     if a.cmd == "plan" or plan.empty:
         return 0
     if not a.yes and input("Apply? [y/N] ").strip().lower() != "y":

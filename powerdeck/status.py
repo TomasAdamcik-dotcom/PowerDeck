@@ -20,6 +20,7 @@ class Status:
     rdp_connections: int = 0
     login_sessions: int = 0
     wifi_powersave: str | None = None
+    remote_login: str | None = None  # GNOME Remote Login (system RDP): enabled / disabled
 
 
 def _read(path: str) -> str | None:
@@ -76,7 +77,21 @@ def read_status(run: Runner = system_runner) -> Status:
     rdp = _count_lines(*reversed(run(["ss", "-Htn", "state", "established", "sport", "=", ":3389"])))
     sess = _count_lines(*reversed(run(["loginctl", "list-sessions", "--no-legend"])))
     return Status(pct, state, read_cpu_temp(), conn, pm if rc == 0 else None,
-                  ssh, rdp, sess, read_wifi_powersave(run))
+                  ssh, rdp, sess, read_wifi_powersave(run), read_remote_login(run))
+
+
+def read_remote_login(run: Runner) -> str | None:
+    """RDP status of the system-wide gnome-remote-desktop (headless "Remote Login")."""
+    rc, out = run(["grdctl", "--system", "status"])
+    if rc != 0:
+        return None
+    in_rdp = False
+    for line in out.splitlines():
+        if not line.startswith((" ", "\t")):
+            in_rdp = line.strip() == "RDP:"
+        elif in_rdp and line.strip().startswith("Status:"):
+            return line.split(":", 1)[1].strip()
+    return None
 
 
 def read_wifi_powersave(run: Runner) -> str | None:

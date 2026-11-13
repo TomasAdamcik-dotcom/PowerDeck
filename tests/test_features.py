@@ -151,3 +151,101 @@ def test_all_builtin_profiles_valid():
     assert {"Default", "RemoteWork", "Travel", "Rucksack", "BatterySaver", "Max Performance", "Presentation"} <= set(BY)
     for p in BUILTIN_PROFILES:
         p.validate()
+
+
+def test_remote_profiles_disable_screen_lock_and_others_restore_it():
+    # gsd-power locks on lid close and GNOME Shell drops RDP while locked
+    f = Fake()
+    f.gs["lock-enabled"] = "true"
+    for name in ("RemoteWork", "Travel", "Rucksack"):
+        ch = [c for c in engine.make_plan(BY[name], f).changes if c.target == "Screen lock enabled"]
+        assert [(c.old, c.new) for c in ch] == [("true", "false")], name
+    f.gs["lock-enabled"] = "false"
+    for name in ("Default", "BatterySaver", "Max Performance"):
+        ch = [c for c in engine.make_plan(BY[name], f).changes if c.target == "Screen lock enabled"]
+        assert [(c.old, c.new) for c in ch] == [("false", "true")], name
+
+
+def test_lock_screen_validation():
+    import pytest
+    from powerdeck.profile import Profile, ProfileError
+    with pytest.raises(ProfileError):
+        Profile(name="X", display={"lock_screen": "no"}).validate()
+    with pytest.raises(ProfileError):
+        Profile(name="X", display={"lock_screen": False, "lock_after_minutes": 5}).validate()
+
+
+def test_capture_includes_screen_lock():
+    f = Fake()
+    f.gs["lock-enabled"] = "true"
+    assert capture_current(f).display == {"lock_screen": True}
+
+
+class ScreenSaverBus:
+    """Fake runner for org.gnome.ScreenSaver over gdbus (plus a quiet status read)."""
+
+    def __init__(self, active):
+        self.active, self.calls = active, []
+
+    def __call__(self, a):
+        self.calls.append(a)
+        if a[0] == "gdbus" and a[-1] == "org.gnome.ScreenSaver.GetActive":
+            return 0, f"({str(self.active).lower()},)"
+        if a[0] == "gdbus" and a[-2] == "org.gnome.ScreenSaver.SetActive":
+            self.active = a[-1] == "true"; return 0, "()"
+        return 127, ""
+
+
+def _remote_profiles(tmp_path, name="Travel"):
+    active = tmp_path / "state" / "powerdeck" / "active.json"
+    active.parent.mkdir(parents=True, exist_ok=True)
+    active.write_text('{"profile": "%s"}' % name)
+    return {p.name: p for p in BUILTIN_PROFILES}
+
+
+def test_guard_dismisses_screensaver_only_for_remote_profiles(tmp_path):
+    profiles = _remote_profiles(tmp_path)
+    bus = ScreenSaverBus(active=True)
+    assert guard.on_monitor_line("/org/gnome/ScreenSaver: org.gnome.ScreenSaver.ActiveChanged (true,)", bus, profiles)
+    assert bus.active is False
+    bus.active = True
+    assert not guard.on_monitor_line("/org/gnome/ScreenSaver: org.gnome.ScreenSaver.ActiveChanged (false,)", bus, profiles)
+    _remote_profiles(tmp_path, "Default")
+    assert not guard.on_monitor_line("/org/gnome/ScreenSaver: org.gnome.ScreenSaver.ActiveChanged (true,)", bus, profiles)
+    assert bus.active is True          # Default: GNOME's normal screensaver/lock is left alone
+
+
+def test_guard_poll_dismisses_screensaver_as_fallback(tmp_path):
+    profiles = _remote_profiles(tmp_path, "RemoteWork")
+    bus = ScreenSaverBus(active=True)
+    guard.run_once(guard.GuardState(), bus, profiles)
+    assert bus.active is False
+
+
+def test_remote_profiles_never_idle_blank_and_need_unlocked_screen():
+    for name in ("RemoteWork", "Travel", "Rucksack"):
+        p = BY[name]
+        assert p.remote_access and p.display["lock_screen"] is False and p.display["blank_after_minutes"] == 0
+    with pytest.raises(ProfileError):
+        Profile(name="X", remote_access=True).validate()
+    with pytest.raises(ProfileError):
+        Profile(name="X", remote_access="yes", display={"lock_screen": False}).validate()
+
+
+def test_read_remote_login():
+    out = ("Overall:\n\tUnit status: inactive\nRDP:\n\tStatus: disabled\n\tPort: 3389\n"
+           "VNC:\n\tStatus: enabled\n")
+    assert status.read_remote_login(lambda a: (0, out)) == "disabled"
+    assert status.read_remote_login(lambda a: (0, out.replace("disabled", "enabled", 1))) == "enabled"
+    assert status.read_remote_login(lambda a: (127, "")) is None
+
+
+def test_remote_access_notes():
+    def run(state, login):
+        return lambda a: ((0, state) if a[0] == "systemctl" else (1, "") if a[0] == "pgrep"
+                          else (0, f"RDP:\n\tStatus: {login}\n"))
+    assert guard.remote_access_notes(run("active", "enabled")) == []
+    notes = guard.remote_access_notes(run("inactive", "disabled"))
+    assert len(notes) == 2 and "guard is not running" in notes[0] and "Remote Login" in notes[1]
+    manual = lambda a: (0, "inactive") if a[0] == "systemctl" else (0, "123") if a[0] == "pgrep" else (0, "")
+    assert not any("guard" in n for n in guard.remote_access_notes(manual))   # `powerdeck guard` by hand

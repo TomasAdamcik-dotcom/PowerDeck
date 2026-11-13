@@ -47,9 +47,12 @@ class Profile:
     thermal_guard: dict = field(default_factory=dict)  # warn_celsius, critical_celsius
     tasks: dict = field(default_factory=dict)  # on_activate / on_deactivate
     tethering: dict = field(default_factory=dict)  # connection, priority
-    display: dict = field(default_factory=dict)  # blank_after_minutes, lock_after_minutes, brightness_percent, night_light
+    display: dict = field(default_factory=dict)  # blank_after_minutes, lock_after_minutes, lock_screen, brightness_percent, night_light
     bluetooth: bool | None = None
     cpu: dict = field(default_factory=dict)  # turbo (bool), max_freq_percent (10-100)
+    # Keep GNOME desktop sharing (RDP) reachable: the guard dismisses the screensaver, which
+    # GNOME activates when the lid closes and which inhibits all remote desktop sessions.
+    remote_access: bool | None = None
     builtin: bool = False
 
     def validate(self) -> None:
@@ -79,7 +82,7 @@ class Profile:
                 raise ProfileError("tethering.priority invalid")
         d = self.display
         for k in d:
-            if k not in ("blank_after_minutes", "lock_after_minutes", "brightness_percent", "night_light"):
+            if k not in ("blank_after_minutes", "lock_after_minutes", "lock_screen", "brightness_percent", "night_light"):
                 raise ProfileError(f"Unknown display key: {k}")
         for k in ("blank_after_minutes", "lock_after_minutes"):
             if k in d and not (isinstance(d[k], int) and 0 <= d[k] <= 1440):
@@ -88,6 +91,10 @@ class Profile:
             raise ProfileError("display.brightness_percent invalid")
         if "night_light" in d and not isinstance(d["night_light"], bool):
             raise ProfileError("display.night_light invalid")
+        if "lock_screen" in d and not isinstance(d["lock_screen"], bool):
+            raise ProfileError("display.lock_screen invalid")
+        if "lock_screen" in d and "lock_after_minutes" in d:
+            raise ProfileError("display.lock_screen and display.lock_after_minutes are exclusive")
         for k, v in self.cpu.items():
             if k == "turbo" and isinstance(v, bool):
                 continue
@@ -96,6 +103,11 @@ class Profile:
             raise ProfileError(f"Invalid cpu setting: {k}={v!r}")
         if self.bluetooth not in (None, True, False):
             raise ProfileError("bluetooth must be true/false")
+        if self.remote_access not in (None, True, False):
+            raise ProfileError("remote_access must be true/false")
+        if self.remote_access and d.get("lock_screen") is not False:
+            # a locked screen cannot be dismissed over D-Bus, so the guard could not help
+            raise ProfileError("remote_access requires display.lock_screen = false")
         for k in ("on_activate", "on_deactivate"):
             for cmd in self.tasks.get(k, []):
                 parse_task(cmd)
