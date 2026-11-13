@@ -70,6 +70,11 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [ ] Voliteľne: GNOME Shell extension/indikátor v paneli (po v1)
 - [ ] Odmietnuť/zvážiť Flatpak: sandbox bráni `nmcli`/`pkexec`
 
+## 2b. GUI – pripravuje sa redizajn
+
+- [ ] **GUI sa bude meniť** podľa inštrukcií vlastníka (zatiaľ nedodané) – do vtedy v `gtk_app.py` len nevyhnutné opravy
+- [ ] Pri redizajne nahradiť zastaraný `Adw.MessageDialog` za `Adw.AlertDialog` (libadwaita 1.9 na Ubuntu 26.04 hlási DeprecationWarning)
+
 ## 3. Otvorené otázky
 
 1. Verzia GNOME na Ubuntu 26.04 a dostupné gsettings kľúče
