@@ -30,7 +30,10 @@ BUILTIN_PROFILES = [
         wifi_powersave="off",
         power_mode="power-saver",
         display={"blank_after_minutes": 1, "night_light": False},
-        cpu={"turbo": False, "max_freq_percent": 70},
+        # Turbo off alone caps the clock at base frequency; a % limit on top would be relative
+        # to that base clock (kernel lowers cpuinfo_max_freq) and starve the CPU. 100 also lifts
+        # a cap left behind by Rucksack.
+        cpu={"turbo": False, "max_freq_percent": 100},
         thermal_guard={"warn_celsius": 80, "critical_celsius": 88},
         builtin=True,
     ),

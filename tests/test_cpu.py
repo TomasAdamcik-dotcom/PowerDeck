@@ -72,22 +72,34 @@ def test_helper_reports_unsupported(tmp_path):
     assert helper.main(["set-cpu-max-percent", "50"], cpu_root=str(tmp_path)) == 3
 
 
-def test_plan_travel_cpu(fake_cpu):
-    plan = engine.make_plan(BY["Travel"], lambda a: (127, ""))
+def test_plan_rucksack_cpu(fake_cpu):
+    plan = engine.make_plan(BY["Rucksack"], lambda a: (127, ""))
     cpu_changes = [c for c in plan.changes if c.backend == "cpu"]
     assert [c.target for c in cpu_changes] == ["CPU turbo/boost", "CPU max frequency"]
     assert cpu_changes[0].apply_argv[-2:] == ["set-cpu-turbo", "off"]
     assert cpu_changes[0].revert_argv[-2:] == ["set-cpu-turbo", "on"]
-    assert cpu_changes[1].apply_argv[-2:] == ["set-cpu-max-percent", "70"]
+    assert cpu_changes[1].apply_argv[-2:] == ["set-cpu-max-percent", "50"]
     assert cpu_changes[1].revert_argv[-2:] == ["set-cpu-max-percent", "100"]
     assert all(c.privileged and c.apply_argv[:2] == ["pkexec", backends.HELPER_PATH] for c in cpu_changes)
+
+
+def test_plan_travel_cpu_turbo_only(fake_cpu):
+    cpu_changes = [c for c in engine.make_plan(BY["Travel"], lambda a: (127, "")).changes if c.backend == "cpu"]
+    assert [(c.target, c.apply_argv[-1]) for c in cpu_changes] == [("CPU turbo/boost", "off")]
+
+
+def test_plan_travel_lifts_rucksack_cap(fake_cpu):
+    for i in (0, 1):
+        (fake_cpu / f"cpu{i}/cpufreq/scaling_max_freq").write_text("2000000")   # 50 % left by Rucksack
+    cpu_changes = [c for c in engine.make_plan(BY["Travel"], lambda a: (127, "")).changes if c.backend == "cpu"]
+    assert ("CPU max frequency", "100") in [(c.target, c.apply_argv[-1]) for c in cpu_changes]
 
 
 def test_plan_noop_when_already_set_or_unsupported(fake_cpu, tmp_path, monkeypatch):
     (fake_cpu / "intel_pstate/no_turbo").write_text("1")
     for i in (0, 1):
-        (fake_cpu / f"cpu{i}/cpufreq/scaling_max_freq").write_text("2800000")
-    assert [c for c in engine.make_plan(BY["Travel"], lambda a: (127, "")).changes if c.backend == "cpu"] == []
+        (fake_cpu / f"cpu{i}/cpufreq/scaling_max_freq").write_text("2000000")
+    assert [c for c in engine.make_plan(BY["Rucksack"], lambda a: (127, "")).changes if c.backend == "cpu"] == []
     monkeypatch.setattr(cpu, "CPU_ROOT", str(tmp_path / "gone"))
     assert [c for c in engine.make_plan(BY["Travel"], lambda a: (127, "")).changes if c.backend == "cpu"] == []
 
