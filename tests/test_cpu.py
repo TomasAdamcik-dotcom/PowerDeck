@@ -48,6 +48,8 @@ def test_amd_boost_and_unsupported(tmp_path):
 def test_helper_sets_percent_and_turbo(fake_cpu):
     assert helper.main(["set-cpu-max-percent", "70"], cpu_root=str(fake_cpu)) == 0
     assert (fake_cpu / "cpu0/cpufreq/scaling_max_freq").read_text() == "2800000"
+    assert helper.main(["set-cpu-max-percent", "100"], cpu_root=str(fake_cpu)) == 0
+    assert int((fake_cpu / "cpu0/cpufreq/scaling_max_freq").read_text()) > 5_000_000  # unlimited, not pinned to cpuinfo_max
     assert helper.main(["set-cpu-max-percent", "10"], cpu_root=str(fake_cpu)) == 0
     assert (fake_cpu / "cpu1/cpufreq/scaling_max_freq").read_text() == "800000"   # clamped to min
     assert helper.main(["set-cpu-turbo", "off"], cpu_root=str(fake_cpu)) == 0

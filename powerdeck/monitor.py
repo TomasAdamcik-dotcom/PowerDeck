@@ -42,7 +42,7 @@ def read_power_w(root: str = "/sys/class/power_supply") -> float | None:
             pw = i * v // 1_000_000 if i is not None and v else None  # µA * µV → µW
         if pw is not None:
             w = abs(pw) / 1_000_000
-            return -w if (cpu._read(bat + "/status") == "Charging") else w
+            return -w if w and cpu._read(bat + "/status") == "Charging" else w  # no "-0.0"
     return None
 
 

@@ -1,24 +1,24 @@
 # PowerDeck — stav a čo ostáva
 
-Stav: v0.3. Všetko je implementované a pokryté testami (35 testov proti falošnému systému, GUI smoke test v headless Xvfb, `.deb` sa zbuilduje a nainštaluje v kontajneri). **Nič nebolo vyskúšané na reálnom notebooku** – to je hlavný zostávajúci krok.
+Stav: v0.3. Overenie na reálnom HW (ThinkPad T14s Gen 4, i7 intel_pstate, Ubuntu 26.04) prebieha – výsledky sú pri položkách nižšie. Všetko je implementované a pokryté testami (35 testov proti falošnému systému, GUI smoke test v headless Xvfb, `.deb` sa zbuilduje a nainštaluje v kontajneri). Ostáva najmä test veka a GUI.
 
 ## 0. Overenie na reálnom stroji (Ubuntu 26.04) — vyžaduje teba
 
 Bezpečné (nič nemenia):
-- [ ] `python3 -m powerdeck.cli status` – batéria, teplota, SSH/RDP, Wi‑Fi powersave: zmysluplné hodnoty? (správne `thermal_zone` pre CPU?)
-- [ ] `python3 -m powerdeck.cli plan RemoteWork` / `plan Travel` – zodpovedá diff skutočnému stavu?
+- [x] `python3 -m powerdeck.cli status` – batéria, teplota, SSH/RDP, Wi‑Fi powersave: zmysluplné hodnoty? (správne `thermal_zone` pre CPU?)
+- [x] `python3 -m powerdeck.cli plan RemoteWork` / `plan Travel` – zodpovedá diff skutočnému stavu?
 - [ ] `python3 -m powerdeck.gtk_app` – okno, stav, diff dialóg, editor profilov vyzerajú dobre; prepni Svetlý/Tmavý štýl v Nastaveniach → Vzhľad a over, že sa appka prepne hneď (bez reštartu)
-- [ ] `gsettings list-keys org.gnome.settings-daemon.plugins.power` a `…desktop.session`/`…screensaver` – existujú kľúče, ktoré appka používa (`sleep-inactive-*-type`, `idle-delay`, `lock-enabled`, `lock-delay`, `night-light-enabled`)?
+- [x] `gsettings list-keys org.gnome.settings-daemon.plugins.power` a `…desktop.session`/`…screensaver` – existujú kľúče, ktoré appka používa (`sleep-inactive-*-type`, `idle-delay`, `lock-enabled`, `lock-delay`, `night-light-enabled`)?
 - [ ] `man nm-settings-nmcli` – potvrdiť hodnoty `802-11-wireless.powersave` (0 default, 1 ignore, 2 off, 3 on)
-- [ ] `brightnessctl -m` (ak je nainštalovaný) – formát výstupu zodpovedá parseru (`dev,class,cur,pct%,max`)?
-- [ ] `rfkill list bluetooth` – obsahuje „Soft blocked“?
+- [x] `brightnessctl -m` (ak je nainštalovaný) – formát výstupu zodpovedá parseru (`dev,class,cur,pct%,max`)? ✓ `intel_backlight,backlight,9793,50%,19393`
+- [x] `rfkill list bluetooth` – obsahuje „Soft blocked“?
 
 Zmeny (až po záložke vyššie):
-- [ ] Inštalácia: `scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb` (alebo `sudo scripts/install-helper.sh`)
-- [ ] `apply RemoteWork` → `pkexec` ukáže náš SK/EN text; vznikne `/etc/systemd/logind.conf.d/99-powerdeck-lid.conf`
-- [ ] Overiť, že reload `logind` cez HUP (`systemctl kill -s HUP systemd-logind`) drop-in naozaj prečíta (inak treba reštart/odhlásenie – potom zmeniť helper)
+- [x] Inštalácia: `scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb` (alebo `sudo scripts/install-helper.sh`)
+- [x] `apply RemoteWork` → `pkexec` ukáže náš SK/EN text; vznikne `/etc/systemd/logind.conf.d/99-powerdeck-lid.conf`
+- [x] Overiť, že reload `logind` cez HUP (`systemctl kill -s HUP systemd-logind`) drop-in naozaj prečíta (inak treba reštart/odhlásenie – potom zmeniť helper) ✓ `busctl` hneď hlási `HandleLidSwitch=ignore`
 - [ ] Test zavretia veka 3–5 min + ping/SSH z telefónu
-- [ ] `restore` vráti pôvodný stav (opakované `restore` ide ďalej späť)
+- [x] `restore` vráti pôvodný stav (opakované `restore` ide ďalej späť)
 - [ ] Zrušený `pkexec` dialóg → appka ukáže chybu a stav ostane konzistentný
 - [ ] `powerdeck guard --once` a systemd služba: `systemctl --user enable --now powerdeck-guard` – prídu notifikácie pri prekročení prahu?
 - [ ] `powerdeck snapshot` – uloží aktuálne nastavenia ako profil Default (prepíše vstavaný)
@@ -26,15 +26,15 @@ Zmeny (až po záložke vyššie):
 ## 0b. Test limitu CPU a monitoringu (nové, treba reálny HW)
 
 Najprv bez zmien:
-- [ ] `cat /sys/devices/system/cpu/intel_pstate/no_turbo` (Intel) alebo `cat /sys/devices/system/cpu/cpufreq/boost` (AMD) – existuje aspoň jeden? Ak nie, turbo sa preskočí (stav `n/a`)
-- [ ] `ls /sys/devices/system/cpu/cpu0/cpufreq/` – sú `scaling_max_freq`, `cpuinfo_max_freq`, `scaling_cur_freq`? (pozor: pri `intel_pstate` v aktívnom režime sa `scaling_max_freq` správa trochu inak)
-- [ ] `powerdeck monitor --duration 10` – zmysluplné hodnoty? Je `power`/`fan` k dispozícii (závisí od modelu; `n/a` je v poriadku)
+- [x] `cat /sys/devices/system/cpu/intel_pstate/no_turbo` (Intel) alebo `cat /sys/devices/system/cpu/cpufreq/boost` (AMD) – existuje aspoň jeden? Ak nie, turbo sa preskočí (stav `n/a`)
+- [x] `ls /sys/devices/system/cpu/cpu0/cpufreq/` – sú `scaling_max_freq`, `cpuinfo_max_freq`, `scaling_cur_freq`? (pozor: pri `intel_pstate` v aktívnom režime sa `scaling_max_freq` správa trochu inak)
+- [x] `powerdeck monitor --duration 10` – zmysluplné hodnoty? Je `power`/`fan` k dispozícii (závisí od modelu; `n/a` je v poriadku)
 
 Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng --cpu 0 --timeout 120s` alebo reálna Claude/dev úloha):
 1. `powerdeck monitor --interval 2 --duration 150 --csv /tmp/default.csv` počas záťaže v profile **Default**
 2. `powerdeck apply Travel` (turbo off + max 70 %) a to isté: `--csv /tmp/travel.csv`; potom to isté pre `Rucksack` (max 50 %)
 3. Porovnať teplotu, frekvenciu, príkon (CSV stĺpce `temp_c`, `freq_mhz`, `power_w`, `fan_rpm`) → aká je strata výkonu vs. zníženie teploty? Podľa toho doladiť 70 % / turbo v profiloch.
-- [ ] `powerdeck restore` vráti turbo a max. frekvenciu (over cez monitor: `limit 100%`, `turbo on`)
+- [x] `powerdeck restore` vráti turbo a max. frekvenciu (over cez monitor: `limit 100%`, `turbo on`) ✓ opravené: 100 % sa zapisovalo ako `cpuinfo_max_freq` počas vypnutého turba (1,1 GHz) a po zapnutí turba ostal strop; teraz helper zapíše 100 GHz, ktoré kernel oreže
 - [ ] Po reštarte sú limity späť na predvolené (sysfs sa nezachováva) – to je zámer; ak ich chceš trvalé, treba systemd službu pri štarte
 - [ ] Prvý `pkexec` dialóg ukáže nový text „Change laptop power settings (lid behaviour, CPU limits)“; po zmene politiky treba znova `sudo scripts/install-helper.sh` (alebo nový `.deb`)
 - [ ] GUI: skupina „Monitoring“ sa obnovuje každé 2 s, level bary fungujú, nespomaľuje to appku
@@ -73,7 +73,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 ## 3. Otvorené otázky
 
 1. Verzia GNOME na Ubuntu 26.04 a dostupné gsettings kľúče
-2. HUP vs. reštart `systemd-logind` – čo je bezpečné?
+2. ~~HUP vs. reštart `systemd-logind`~~ – HUP stačí (overené)
 3. RDP (`gnome-remote-desktop`) so zavretým vekom a zamknutou obrazovkou
-4. HW používateľa: senzory teploty, `power-profiles-daemon` vs. TLP
+4. HW: ThinkPad T14s Gen 4, `x86_pkg_temp`/`TCPU` zóny, `power-profiles-daemon` (intel_pstate + platform_profile), ventilátor cez `thinkpad` hwmon
 5. Thermal guard reaguje len prepnutím na power-saver – stačí, alebo má pri critical aj aplikovať Default?

@@ -32,6 +32,7 @@ def _reload_logind() -> None:
 
 
 CPU_ROOT = "/sys/devices/system/cpu"
+UNLIMITED_KHZ = 100_000_000  # 100 GHz, clamped by the kernel
 
 
 def set_turbo(on: bool, root: str = CPU_ROOT) -> int:
@@ -46,7 +47,13 @@ def set_turbo(on: bool, root: str = CPU_ROOT) -> int:
 
 
 def set_max_percent(pct: int, root: str = CPU_ROOT) -> int:
-    """Limit scaling_max_freq to pct % of each core's hardware maximum."""
+    """Limit scaling_max_freq to pct % of each core's hardware maximum.
+
+    100 % means "no limit": the kernel keeps whatever is written as the user's ceiling, and
+    cpuinfo_max_freq shrinks to the base clock while turbo is off, so writing the current
+    hardware maximum would leave the CPU capped once turbo is switched back on. A value above
+    any real frequency is clamped by the kernel to the current maximum and never goes stale.
+    """
     import glob
     dirs = sorted(glob.glob(f"{root}/cpu[0-9]*/cpufreq"))
     if not dirs:
@@ -58,7 +65,7 @@ def set_max_percent(pct: int, root: str = CPU_ROOT) -> int:
             hw = int(open(f"{d}/cpuinfo_max_freq").read())
             lo = int(open(f"{d}/scaling_min_freq").read())
             with open(f"{d}/scaling_max_freq", "w") as f:
-                f.write(str(max(lo, hw * pct // 100)))
+                f.write(str(UNLIMITED_KHZ if pct == 100 else max(lo, hw * pct // 100)))
         except (OSError, ValueError) as e:
             print(f"{d}: {e}", file=sys.stderr)
             failed += 1
