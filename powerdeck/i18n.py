@@ -40,6 +40,18 @@ SK = {
     "Wi-Fi networks (comma separated)": "Wi-Fi siete (oddelené čiarkou)",
     "Tethering connection": "Tethering pripojenie",
     "Save": "Uložiť",
+    "Source:": "Zdroj:",
+    "Profile applied last by PowerDeck. Changes made outside PowerDeck are not detected.": "Profil, ktorý PowerDeck aplikoval naposledy. Zmeny urobené mimo PowerDeck sa nezistia.",
+    "Charge in % (average over all batteries) and charging state from the kernel.": "Nabitie v % (priemer všetkých batérií) a stav nabíjania podľa jadra.",
+    "First active Wi-Fi, Ethernet or mobile connection in NetworkManager.": "Prvé aktívne Wi-Fi, Ethernet alebo mobilné pripojenie v NetworkManageri.",
+    "Current power-profiles-daemon mode: power-saver, balanced or performance.": "Aktuálny režim power-profiles-daemon: power-saver, balanced alebo performance.",
+    "Real power-save state of the Wi-Fi adapter right now (not the saved profile value).": "Skutočný stav šetrenia Wi-Fi adaptéra práve teraz (nie hodnota uložená v profile).",
+    "Established SSH (port 22) and RDP (port 3389) connections and login sessions.": "Nadviazané SSH (port 22) a RDP (port 3389) spojenia a prihlásené relácie.",
+    "Hottest CPU thermal zone (x86_pkg_temp, coretemp, k10temp…); compared with the active profile's thermal limits.": "Najteplejšia teplotná zóna CPU (x86_pkg_temp, coretemp, k10temp…); porovnáva sa s teplotnými limitmi aktívneho profilu.",
+    "Average current clock of all cores, % of the hardware maximum, the configured cap and turbo state.": "Priemerný aktuálny takt všetkých jadier, % hardvérového maxima, nastavený limit a stav turba.",
+    "Share of CPU time not idle since the previous sample (every 2 s).": "Podiel času CPU mimo nečinnosti od predošlého merania (každé 2 s).",
+    "Battery power: + discharging, − charging. Not reported by every laptop.": "Príkon batérie: + vybíjanie, − nabíjanie. Nie každý notebook ho hlási.",
+    "Fastest fan reported by hwmon. Not reported by every laptop.": "Najrýchlejší ventilátor podľa hwmon. Nie každý notebook ho hlási.",
     # --- profile descriptions (describe.py)
     "Safe everyday mode: lid suspends, automatic suspend on.": "Bezpečný denný režim: veko uspí PC, automatické uspanie zapnuté.",
     "Laptop stays awake and reachable (SSH/RDP) with the lid closed; screen lock off.": "Notebook ostáva zapnutý a dostupný (SSH/RDP) aj so zavretým vekom; zamykanie obrazovky vypnuté.",
@@ -69,9 +81,7 @@ SK = {
     "Automatic suspend when idle: {}": "Automatické uspanie pri nečinnosti: {}",
     "GNOME power setting, no admin rights needed.": "Nastavenie napájania v GNOME, práva správcu netreba.",
     "Wi-Fi powersave: {} – for: {}": "Wi-Fi powersave: {} – pre: {}",
-    "Wi-Fi powersave: {} (for the saved networks listed in the profile)": "Wi-Fi powersave: {} (pre uložené siete uvedené v profile)",
     "system default": "predvolené systémom",
-    "network": "sieť",
     "NetworkManager values: 0 default, 2 off, 3 on. Networks not saved on this PC are skipped.": "Hodnoty NetworkManagera: 0 predvolené, 2 vypnuté, 3 zapnuté. Siete, ktoré nie sú v tomto PC uložené, sa preskočia.",
     "Phone tethering “{}” connects automatically (priority {})": "Tethering z telefónu „{}“ sa pripojí automaticky (priorita {})",
     "Power mode: {}": "Režim napájania: {}",
@@ -95,7 +105,12 @@ SK = {
     "Needs the brightnessctl package.": "Vyžaduje balík brightnessctl.",
     "Bluetooth on": "Bluetooth zapnutý",
     "Bluetooth off": "Bluetooth vypnutý",
-    "Thermal guard: warning at {} °C, critical at {} °C (switches to power-saver)": "Strážca teploty: varovanie pri {} °C, kritická hodnota pri {} °C (prepne na power-saver)",
+    "Thermal guard: notification at {} °C, urgent alert at {} °C (power-saver is already on, so it can only warn)": "Strážca teploty: upozornenie pri {} °C, naliehavé varovanie pri {} °C (power-saver už beží, takže môže len varovať)",
+    "Thermal guard: notification at {} °C, at {} °C it switches to power-saver": "Strážca teploty: upozornenie pri {} °C, pri {} °C prepne na power-saver",
+    "Wi-Fi powersave: {} – for all saved Wi-Fi networks": "Wi-Fi powersave: {} – pre všetky uložené Wi-Fi siete",
+    "each Wi-Fi network": "každá Wi-Fi sieť",
+    "No extra CPU frequency cap on top of turbo off (removes a cap left by another profile)": "Bez ďalšieho obmedzenia frekvencie CPU nad vypnuté turbo (zruší limit, ktorý nechal iný profil)",
+    "Blanking starts the GNOME screensaver, which would drop remote desktop (RDP).": "Zhasnutie spustí šetrič obrazovky GNOME, ktorý by prerušil vzdialenú plochu (RDP).",
     "The guard service runs `powerdeck guard` and sends desktop notifications. It must be enabled once.": "Služba strážcu spúšťa `powerdeck guard` a posiela upozornenia na ploche. Treba ju raz povoliť.",
     "On activate": "Pri aktivácii",
     "On leaving": "Pri opustení",
@@ -124,12 +139,21 @@ SK = {
 }
 
 
+TRANSLATIONS = {"sk": SK}  # add a language here; anything else falls back to English
+
+
 def _lang() -> str:
-    for v in ("LC_ALL", "LC_MESSAGES", "LANG"):
-        if os.environ.get(v):
-            return os.environ[v][:2]
-    return "en"
+    """Desktop language, in the order glibc/GNOME use: LANGUAGE, LC_ALL, LC_MESSAGES, LANG."""
+    lang = os.environ.get("LANGUAGE", "").split(":")[0]
+    if not lang:
+        for v in ("LC_ALL", "LC_MESSAGES", "LANG"):
+            if os.environ.get(v):
+                lang = os.environ[v]
+                break
+    lang = lang.split(".")[0].split("_")[0].lower()
+    return "en" if lang in ("", "c", "posix") else lang
 
 
 def _(s: str) -> str:
-    return SK.get(s, s) if _lang() == "sk" else s
+    table = TRANSLATIONS.get(_lang())
+    return table.get(s, s) if table else s

@@ -75,12 +75,14 @@ class MainWindow(Adw.ApplicationWindow):
 
         grp = Adw.PreferencesGroup(title=_("Status"))
         self.rows = {}
-        for key in ("active", "battery", "temp", "conn", "mode", "wifips", "sessions"):
+        # CPU temperature lives only in "Monitor" (live), so it is not duplicated here.
+        for key in ("active", "battery", "conn", "mode", "wifips", "sessions"):
             r = Adw.ActionRow(title={"active": _("Active profile"), "battery": _("Battery"),
-                                     "temp": _("CPU temperature"), "conn": _("Connection"),
+                                     "conn": _("Connection"),
                                      "mode": _("Power mode"), "wifips": _("Wi-Fi powersave"),
                                      "sessions": _("Sessions")}[key])
             r.add_css_class("property")
+            r.set_tooltip_markup(_help_markup(*STATUS_HELP[key]))
             self.rows[key] = r
             grp.add(r)
         content.add(grp)
@@ -94,6 +96,7 @@ class MainWindow(Adw.ApplicationWindow):
                                 ("fan", _("Fan"), False)):
             r = Adw.ActionRow(title=title)
             r.add_css_class("property")
+            r.set_tooltip_markup(_help_markup(*MONITOR_HELP[key]))
             if bar:
                 lb = Gtk.LevelBar(min_value=0, max_value=100, valign=Gtk.Align.CENTER, width_request=120)
                 r.add_suffix(lb)
@@ -145,7 +148,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _monitor_tick(self):
         s = self.monitor.sample()
         na = _("unknown")
-        self.mrows["temp"].set_subtitle(na if s.temp_c is None else f"{s.temp_c:.0f} °C")
+        self.mrows["temp"].set_subtitle(
+            na if s.temp_c is None else f"{s.temp_c:.0f} °C — {_(thermal_level(s.temp_c))}")
         self.mbars["temp"].set_value(max(0, min(100, s.temp_c or 0)))
         if s.freq_mhz is None:
             self.mrows["freq"].set_subtitle(na)
@@ -165,11 +169,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.rows["active"].set_subtitle(engine.active_profile() or _("none"))
         bat = _("unknown") if s.battery_percent is None else f"{s.battery_percent} % ({s.battery_state})"
         self.rows["battery"].set_subtitle(bat)
-        if s.cpu_temp_c is None:
-            temp = _("unknown")
-        else:
-            temp = f"{s.cpu_temp_c:.0f} °C — {_(thermal_level(s.cpu_temp_c))}"
-        self.rows["temp"].set_subtitle(temp)
         self.rows["conn"].set_subtitle(s.active_connection or _("unknown"))
         self.rows["mode"].set_subtitle(s.power_mode or _("unknown"))
         self.rows["wifips"].set_subtitle(s.wifi_powersave or _("unknown"))
@@ -200,9 +199,10 @@ class MainWindow(Adw.ApplicationWindow):
         for it in desc.items:
             row = Adw.ActionRow(title=GLib.markup_escape_text(("⚠ " if it.warning else "• ") + it.text))
             row.set_title_lines(0)
+            row.add_css_class("pd-compact")
             if it.commands:
                 btn = Gtk.Button(icon_name="dialog-information-symbolic", valign=Gtk.Align.CENTER,
-                                 css_classes=["flat", "circular"], tooltip_text=_("Show command"))
+                                 css_classes=["flat", "circular", "pd-info"], tooltip_text=_("Show command"))
                 text = it.command_text()
                 markup = "<tt>" + GLib.markup_escape_text(text) + "</tt>"
                 if it.note:
@@ -215,6 +215,7 @@ class MainWindow(Adw.ApplicationWindow):
         if any(i.warning for i in desc.items) and profile.thermal_guard:
             warn = Adw.ActionRow(title="⚠ " + _("Overheating risk – do not keep the laptop closed in a bag for long."))
             warn.set_title_lines(0)
+            warn.add_css_class("pd-compact")
             self.info_group.add(warn)
             self.info_rows.append(warn)
 
@@ -281,6 +282,47 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast(ok_msg)
         self.refresh_status()
         return False
+
+
+# Profile bullets: half the default vertical padding of an Adw.ActionRow (50 px row, ~17 px text).
+COMPACT_CSS = """
+list.boxed-list > row.pd-compact, row.pd-compact { min-height: 0; padding-top: 0; padding-bottom: 0; }
+row.pd-compact > box.header { min-height: 0; padding-top: 2px; padding-bottom: 2px; }  /* + 6 px title padding = 8 px */
+row.pd-compact button.pd-info { min-height: 24px; min-width: 24px; padding: 0; margin-top: -4px; margin-bottom: -4px; }
+"""
+
+# Status / Monitor rows: (what it means, where the value comes from)
+STATUS_HELP = {
+    "active": ("Profile applied last by PowerDeck. Changes made outside PowerDeck are not detected.",
+               "cat ~/.local/state/powerdeck/active.json"),
+    "battery": ("Charge in % (average over all batteries) and charging state from the kernel.",
+                "cat /sys/class/power_supply/BAT*/capacity /sys/class/power_supply/BAT*/status"),
+    "conn": ("First active Wi-Fi, Ethernet or mobile connection in NetworkManager.",
+             "nmcli -t -f NAME,TYPE connection show --active"),
+    "mode": ("Current power-profiles-daemon mode: power-saver, balanced or performance.",
+             "powerprofilesctl get"),
+    "wifips": ("Real power-save state of the Wi-Fi adapter right now (not the saved profile value).",
+               "iw dev <interface> get power_save"),
+    "sessions": ("Established SSH (port 22) and RDP (port 3389) connections and login sessions.",
+                 "ss -Htn state established sport = :22\nss -Htn state established sport = :3389\n"
+                 "loginctl list-sessions --no-legend"),
+}
+MONITOR_HELP = {
+    "temp": ("Hottest CPU thermal zone (x86_pkg_temp, coretemp, k10temp…); compared with the "
+             "active profile's thermal limits.", "cat /sys/class/thermal/thermal_zone*/{type,temp}"),
+    "freq": ("Average current clock of all cores, % of the hardware maximum, the configured cap "
+             "and turbo state.", "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq"),
+    "load": ("Share of CPU time not idle since the previous sample (every 2 s).", "head -1 /proc/stat"),
+    "power": ("Battery power: + discharging, − charging. Not reported by every laptop.",
+              "cat /sys/class/power_supply/BAT*/power_now"),
+    "fan": ("Fastest fan reported by hwmon. Not reported by every laptop.",
+            "cat /sys/class/hwmon/hwmon*/fan*_input"),
+}
+
+
+def _help_markup(text: str, command: str) -> str:
+    return (GLib.markup_escape_text(_(text)) + "\n\n" + GLib.markup_escape_text(_("Source:"))
+            + "\n<tt>" + GLib.markup_escape_text(command) + "</tt>")
 
 
 _NONE = "—"
@@ -403,6 +445,10 @@ class App(Adw.Application):
         # Follow the system light/dark preference (like GNOME Calculator / Text Editor)
         # and switch live when the user changes it. No hardcoded colours anywhere.
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
+        css = Gtk.CssProvider()
+        css.load_from_data(COMPACT_CSS, -1)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
     def do_activate(self):
         (self.props.active_window or MainWindow(self)).present()

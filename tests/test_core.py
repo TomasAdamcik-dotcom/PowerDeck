@@ -28,6 +28,8 @@ class FakeSystem:
                 return 0, f"'{self.g[argv[3]]}'"
             self.g[argv[3]] = argv[4]; return 0, ""
         if argv[0] == "nmcli":
+            if argv[1] == "-t":
+                return 0, "\n".join(n.replace(":", "\\:") + ":802-11-wireless" for n in self.wifi) + "\nWired:802-3-ethernet"
             if argv[1] == "-g":
                 n = argv[-1]
                 return (0, self.wifi[n]) if n in self.wifi else (10, "")
@@ -84,7 +86,7 @@ def test_plan_remote_work_and_diff(tmp_path):
 def test_nothing_changes_before_apply():
     sysm = FakeSystem()
     engine.make_plan(BY["BatterySaver"], sysm)
-    assert all(c[1] in ("get", "-g", "list", "-m") for c in sysm.calls)
+    assert all(c[1] in ("get", "-g", "-t", "list", "-m") for c in sysm.calls)
 
 
 def test_apply_and_restore(tmp_path):
@@ -169,3 +171,12 @@ def test_helper_file_is_atomic_and_world_readable(tmp_path):
     helper.main(["set-lid", "lock", "ignore", "suspend"], str(tmp_path), reload=False)
     f = tmp_path / helper.DROPIN
     assert oct(f.stat().st_mode & 0o777) == "0o644" and not (tmp_path / (helper.DROPIN + ".tmp")).exists()
+
+
+def test_wifi_without_listed_networks_covers_all_saved_wifi():
+    sysm = FakeSystem()
+    sysm.wifi["Café:5G"] = "0"          # nmcli -t prints it as Café\\:5G
+    plan = engine.make_plan(Profile(name="W", wifi_powersave="off"), sysm)
+    wifi = [c for c in plan.changes if c.target.startswith("Wi-Fi powersave")]
+    assert {c.apply_argv[3] for c in wifi} == {"MojTelefon", "Café:5G"}   # not the wired one
+    assert all(c.new == "2" for c in wifi)

@@ -249,3 +249,14 @@ def test_remote_access_notes():
     assert len(notes) == 2 and "guard is not running" in notes[0] and "Remote Login" in notes[1]
     manual = lambda a: (0, "inactive") if a[0] == "systemctl" else (0, "123") if a[0] == "pgrep" else (0, "")
     assert not any("guard" in n for n in guard.remote_access_notes(manual))   # `powerdeck guard` by hand
+
+
+def test_guard_critical_does_not_claim_a_switch_that_did_not_happen():
+    f = Fake()
+    f.mode = "power-saver"
+    msg = guard.critical_reaction(f, 90)
+    assert "already" in msg or "even with power-saver" in msg
+    assert ["powerprofilesctl", "set", "power-saver"] not in f.calls
+    f2 = Fake()
+    msg = guard.critical_reaction(f2, 90)
+    assert "switched to power-saver" in msg and f2.mode == "power-saver"

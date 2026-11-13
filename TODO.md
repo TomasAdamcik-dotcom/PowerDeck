@@ -79,7 +79,10 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [x] Poradie vpravo: obsah profilu → tlačidlá → Stav → Monitoring; popisy profilov v zozname vľavo sa prekladajú
 - [ ] Info ikona: v cloude (iná téma ikon) vyzerá ako žiarovka – na Ubuntu (Yaru) by mala byť „i“, overiť
 - [ ] Pri redizajne nahradiť zastaraný `Adw.MessageDialog` za `Adw.AlertDialog` (libadwaita 1.9 na Ubuntu 26.04 hlási DeprecationWarning)
-- [ ] Vysvetlenia aj pri riadkoch v bloku „Stav“ (napr. tooltip s príkazom, odkiaľ sa hodnota berie) – zatiaľ len pri obsahu profilu
+- [x] Tooltipy pri riadkoch v „Stave“ a „Monitoringu“ (čo hodnota znamená + príkaz/súbor, odkiaľ sa berie); teplota CPU je už len v Monitoringu (bola duplicitne aj v Stave)
+- [x] Odrážky obsahu profilu kompaktnejšie (riadok 50 → 33 px, polovica voľného miesta hore aj dole)
+- [x] Jazyk podľa prostredia (`LANGUAGE`, potom `LC_ALL`/`LC_MESSAGES`/`LANG`); jazyk bez prekladu → angličtina
+- [x] Odstránené rozpory v textoch aj akciách: strážca pri kritickej teplote prepína na power-saver len ak ešte nebeží (inak len naliehavo varuje, a tak to aj píše); Wi‑Fi powersave bez zoznamu sietí sa teraz naozaj aplikuje na všetky uložené Wi‑Fi siete (predtým text sľuboval zmenu, ale nič sa nestalo); Travel „turbo off + 100 %“ už nepíše „bez limitu“
 - [ ] Vizuálna kontrola GUI na reálnej ploche (screenshot sa v cloude nerobil)
 
 ## 3. Otvorené otázky

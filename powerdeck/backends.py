@@ -83,12 +83,26 @@ def plan_lid(p: Profile, run: Runner, dropin_dir: str | None = None) -> list[Cha
 
 
 # -- Wi-Fi powersave per NetworkManager connection -------------------------
+def saved_wifi_connections(run: Runner) -> list[str]:
+    """Names of all saved Wi-Fi connections (terse nmcli escapes ':' in names as '\\:')."""
+    rc, out = run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"])
+    if rc != 0:
+        return []
+    names = []
+    for line in out.splitlines():
+        name, _, typ = line.rpartition(":")
+        if typ == "802-11-wireless" and name:
+            names.append(name.replace("\\:", ":"))
+    return names
+
+
 def plan_wifi(p: Profile, run: Runner) -> list[Change]:
-    if p.wifi_powersave is None or not p.preferred_networks:
+    """Powersave for the listed networks, or for every saved Wi-Fi network if none are listed."""
+    if p.wifi_powersave is None:
         return []
     new = WIFI_VALUES[p.wifi_powersave]
     out = []
-    for name in p.preferred_networks:
+    for name in p.preferred_networks or saved_wifi_connections(run):
         rc, cur = run(["nmcli", "-g", "802-11-wireless.powersave", "connection", "show", name])
         if rc != 0:
             continue  # connection not saved on this machine
