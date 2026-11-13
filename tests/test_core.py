@@ -93,8 +93,18 @@ def test_apply_and_restore(tmp_path):
     assert errs == []
     assert sysm.g["sleep-inactive-ac-type"] == "nothing"
     assert engine.active_profile(tmp_path / "active.json") == "RemoteWork"
-    assert engine.restore_last(sysm, tmp_path / "b") == []
+    assert engine.restore_last(sysm, tmp_path / "b", tmp_path / "active.json") == []
     assert sysm.g["sleep-inactive-ac-type"] == "suspend"
+    assert engine.active_profile(tmp_path / "active.json") is None   # nothing was active before
+
+
+def test_restore_reactivates_previous_profile(tmp_path):
+    sysm, active = FakeSystem(), tmp_path / "active.json"
+    for name in ("Default", "RemoteWork"):
+        assert engine.apply_plan(engine.make_plan(BY[name], sysm), sysm, tmp_path / "b", active) == []
+    assert engine.active_profile(active) == "RemoteWork"
+    assert engine.restore_last(sysm, tmp_path / "b", active) == []
+    assert engine.active_profile(active) == "Default"
 
 
 def test_failure_rolls_back(tmp_path):
@@ -106,6 +116,7 @@ def test_failure_rolls_back(tmp_path):
     plan = engine.make_plan(p2, sysm)
     errs = engine.apply_plan(plan, sysm, tmp_path, tmp_path / "a.json")
     assert errs and sysm.g["sleep-inactive-battery-type"] == "suspend"  # reverted
+    assert list(tmp_path.glob("*-T.json")) == []   # restore must not undo a failed apply
 
 
 def test_helper_writes_only_whitelisted(tmp_path):

@@ -69,7 +69,7 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
     while snap.exists():  # two applies within the same second
         snap = backup_dir / f"{stamp}-{n}-{plan.profile}.json"
         n += 1
-    snap.write_text(json.dumps({"profile": plan.profile,
+    snap.write_text(json.dumps({"profile": plan.profile, "previous": active_profile(active_file),
                                 "changes": [c.to_dict() for c in plan.changes]}, indent=2))
     done: list[Change] = []
     errors: list[str] = []
@@ -82,6 +82,8 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
             for d in reversed(done):  # roll back what we already did
                 if d.revert_argv:
                     run(d.revert_argv)
+            # nothing stays applied, so this backup must not be the one `restore` undoes next
+            snap.unlink(missing_ok=True)
             return errors
         log.info("applied: %s", c.describe())
         done.append(c)
@@ -90,7 +92,8 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
     return errors
 
 
-def restore_last(run: Runner = system_runner, backup_dir: Path | None = None) -> list[str]:
+def restore_last(run: Runner = system_runner, backup_dir: Path | None = None,
+                 active_file: Path | None = None) -> list[str]:
     """Revert the most recent backup (undo last applied profile)."""
     backup_dir = backup_dir or paths.backups_dir()
     f = _last_backup_file(backup_dir)
@@ -108,6 +111,12 @@ def restore_last(run: Runner = system_runner, backup_dir: Path | None = None) ->
             errors.append(f"{c.target}: {out or 'failed'}")
     if not errors:
         f.rename(f.with_suffix(".restored"))
+        # the profile that was active before this backup's apply is active again
+        active_file = active_file or paths.state_dir() / "active.json"
+        if data.get("previous"):
+            active_file.write_text(json.dumps({"profile": data["previous"]}))
+        else:
+            active_file.unlink(missing_ok=True)
     return errors
 
 

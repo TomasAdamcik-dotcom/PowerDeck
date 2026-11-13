@@ -24,7 +24,7 @@ BUILTIN_PROFILES = [
     ),
     Profile(
         name="Travel",
-        description="RemoteWork tuned for a backpack: USB tethering, stricter thermal limits.",
+        description="RemoteWork for a backpack: no turbo, power-saver, stricter thermal limits.",
         lid={"battery": "ignore", "ac": "ignore", "docked": "ignore"},
         automatic_suspend={"battery": False, "ac": False},
         wifi_powersave="off",
