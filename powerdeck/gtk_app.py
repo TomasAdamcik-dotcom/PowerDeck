@@ -8,11 +8,12 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from . import backends, engine  # noqa: E402
 from .monitor import Monitor  # noqa: E402
 from .i18n import _  # noqa: E402
+from .describe import describe  # noqa: E402
 from .logs import setup_logging  # noqa: E402
 from .profile import LID_ACTIONS, POWER_MODES, Profile, ProfileError, load_profiles, save_profile  # noqa: E402
 from .runner import system_runner  # noqa: E402
@@ -51,6 +52,11 @@ class MainWindow(Adw.ApplicationWindow):
 
         # -- content: status + actions
         content = Adw.PreferencesPage()
+        # -- profile contents (first block): summary + bullets with command tooltips
+        self.info_group = Adw.PreferencesGroup(title=_("Profile contents"),
+                                               description=_("Select a profile on the left to see what it changes."))
+        self.info_rows = []
+        content.add(self.info_group)
         grp = Adw.PreferencesGroup(title=_("Status"))
         self.rows = {}
         for key in ("active", "battery", "temp", "conn", "mode", "wifips", "sessions"):
@@ -99,6 +105,7 @@ class MainWindow(Adw.ApplicationWindow):
         view.set_content(self.toasts)
         self.set_content(view)
         self.refresh_status()
+        self._select_active()
         GLib.timeout_add_seconds(10, self._tick)
         GLib.timeout_add_seconds(2, self._monitor_tick)
 
@@ -120,6 +127,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.apply_btn.set_sensitive(False)
         self.edit_btn.set_sensitive(False)
         self._fill_list()
+        self._show_profile(None)
 
     def _edit(self, profile):
         ProfileEditor(self, profile).present()
@@ -165,8 +173,55 @@ class MainWindow(Adw.ApplicationWindow):
         self.rows["sessions"].set_subtitle(
             f"SSH: {s.ssh_connections} · RDP: {s.rdp_connections} · {_('Login sessions')}: {s.login_sessions}")
 
+    def _select_active(self):
+        active = engine.active_profile()
+        row = self.listbox.get_first_child()
+        while row is not None:
+            if row.profile.name == active:
+                self.listbox.select_row(row)
+                return
+            row = row.get_next_sibling()
+
+    def _show_profile(self, profile):
+        """Fill the top block: short description, then bullets; the info icon shows the command."""
+        for r in self.info_rows:
+            self.info_group.remove(r)
+        self.info_rows = []
+        if profile is None:
+            self.info_group.set_title(_("Profile contents"))
+            self.info_group.set_description(_("Select a profile on the left to see what it changes."))
+            return
+        desc = describe(profile)
+        self.info_group.set_title(profile.name)
+        self.info_group.set_description(GLib.markup_escape_text(desc.summary))
+        for it in desc.items:
+            row = Adw.ActionRow(title=GLib.markup_escape_text(("⚠ " if it.warning else "• ") + it.text))
+            row.set_title_lines(0)
+            if it.commands:
+                btn = Gtk.Button(icon_name="dialog-information-symbolic", valign=Gtk.Align.CENTER,
+                                 css_classes=["flat", "circular"], tooltip_text=_("Show command"))
+                text = it.command_text()
+                markup = "<tt>" + GLib.markup_escape_text(text) + "</tt>"
+                if it.note:
+                    markup += "\n\n" + GLib.markup_escape_text(it.note)
+                btn.set_tooltip_markup(markup)
+                btn.connect("clicked", self._copy_command, text)
+                row.add_suffix(btn)
+            self.info_group.add(row)
+            self.info_rows.append(row)
+        if any(i.warning for i in desc.items) and profile.thermal_guard:
+            warn = Adw.ActionRow(title="⚠ " + _("Overheating risk – do not keep the laptop closed in a bag for long."))
+            warn.set_title_lines(0)
+            self.info_group.add(warn)
+            self.info_rows.append(warn)
+
+    def _copy_command(self, _btn, text):
+        Gdk.Display.get_default().get_clipboard().set(text)
+        self.toast(_("Copied to clipboard."))
+
     def _on_select(self, _lb, row):
         self.selected = row.profile if row else None
+        self._show_profile(self.selected)
         self.apply_btn.set_sensitive(self.selected is not None)
         self.edit_btn.set_sensitive(self.selected is not None)
 

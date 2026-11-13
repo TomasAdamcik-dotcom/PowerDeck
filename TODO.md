@@ -38,6 +38,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [x] `powerdeck restore` vráti turbo a max. frekvenciu (over cez monitor: `limit 100%`, `turbo on`) ✓ opravené: 100 % sa zapisovalo ako `cpuinfo_max_freq` počas vypnutého turba (1,1 GHz) a po zapnutí turba ostal strop; teraz helper zapíše 100 GHz, ktoré kernel oreže
 - [ ] Po reštarte sú limity späť na predvolené (sysfs sa nezachováva) – to je zámer; ak ich chceš trvalé, treba systemd službu pri štarte
 - [ ] Prvý `pkexec` dialóg ukáže nový text „Change laptop power settings (lid behaviour, CPU limits)“; po zmene politiky treba znova `sudo scripts/install-helper.sh` (alebo nový `.deb`)
+- [ ] GUI: po kliknutí na profil sa hore vpravo ukáže „Obsah profilu“ (popis + odrážky); info ikona pri odrážke ukáže príkaz po nabehnutí myšou, kliknutie ho skopíruje – skontroluj vzhľad, čitateľnosť tooltipu a že texty sedia v SK aj EN
 - [ ] GUI: skupina „Monitoring“ sa obnovuje každé 2 s, level bary fungujú, nespomaľuje to appku
 
 ## 1. Hotové (od v0.1)
@@ -51,6 +52,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - Profily `Travel`, `Rucksack`, `Presentation`; Max Performance „návrat“ = `restore`
 - `snapshot` – Default zo skutočného stavu systému
 - Viacnásobný rollback (každé `restore` vráti ďalšiu zálohu)
+- Obsah profilu v GUI (`describe.py`): stručný popis + odrážky v ľudskej reči, info ikona s presným príkazom (test zaručuje, že tooltip = príkazy, ktoré engine naozaj spustí)
 - Editor/tvorba profilov v GUI, chybové dialógy, ikona, `.desktop`, AppStream
 - Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
 - Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off (bez % limitu; 70 % s vypnutým turbom = 770 MHz, príliš málo), **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Max Performance ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
@@ -71,10 +73,12 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [ ] Voliteľne: GNOME Shell extension/indikátor v paneli (po v1)
 - [ ] Odmietnuť/zvážiť Flatpak: sandbox bráni `nmcli`/`pkexec`
 
-## 2b. GUI – pripravuje sa redizajn
+## 2b. GUI – redizajn (podľa inštrukcií vlastníka, prebieha)
 
-- [ ] **GUI sa bude meniť** podľa inštrukcií vlastníka (zatiaľ nedodané) – do vtedy v `gtk_app.py` len nevyhnutné opravy
+- [x] Obsah profilu hore vpravo (popis + odrážky + info ikona s príkazom)
 - [ ] Pri redizajne nahradiť zastaraný `Adw.MessageDialog` za `Adw.AlertDialog` (libadwaita 1.9 na Ubuntu 26.04 hlási DeprecationWarning)
+- [ ] Vysvetlenia aj pri riadkoch v bloku „Stav“ (napr. tooltip s príkazom, odkiaľ sa hodnota berie) – zatiaľ len pri obsahu profilu
+- [ ] Vizuálna kontrola GUI na reálnej ploche (screenshot sa v cloude nerobil)
 
 ## 3. Otvorené otázky
 
