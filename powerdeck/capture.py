@@ -17,6 +17,9 @@ def capture_current(run: Runner = system_runner, name: str = "Default") -> Profi
     p = Profile(name=name, description="Snapshot of your system settings.", lid=lid,
                 automatic_suspend=auto, wifi_powersave="default",
                 power_mode=mode.strip() if rc == 0 and mode.strip() in ("power-saver", "balanced", "performance") else None)
+    rc, out = run(["gsettings", "get", "org.gnome.desktop.screensaver", "lock-enabled"])
+    if rc == 0 and out.strip() in ("true", "false"):
+        p.display["lock_screen"] = out.strip() == "true"
     t, m = cpu.read_turbo(), cpu.read_max_percent()
     if t is not None:
         p.cpu["turbo"] = t

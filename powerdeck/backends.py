@@ -163,6 +163,11 @@ def plan_display(p: Profile, run: Runner) -> list[Change]:
             delay = str(max(0, lock_min - blank_min) * 60)
             out += _gs_change(run, "Lock delay after blank (s)", "org.gnome.desktop.screensaver",
                               "lock-delay", delay)
+    if "lock_screen" in d:
+        # GNOME locks the screen when the lid closes (gsd-power), and a locked session
+        # inhibits all remote desktop sessions, so remote profiles must turn locking off.
+        out += _gs_change(run, "Screen lock enabled", "org.gnome.desktop.screensaver", "lock-enabled",
+                          "true" if d["lock_screen"] else "false")
     if "night_light" in d:
         out += _gs_change(run, "Night light", "org.gnome.settings-daemon.plugins.color",
                           "night-light-enabled", "true" if d["night_light"] else "false")
