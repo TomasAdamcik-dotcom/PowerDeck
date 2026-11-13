@@ -50,13 +50,29 @@ class MainWindow(Adw.ApplicationWindow):
                                        child=Gtk.ScrolledWindow(child=self.listbox))
         split.set_sidebar(side_page)
 
-        # -- content: status + actions
+        # -- content (top to bottom): profile contents, actions, status, monitor
         content = Adw.PreferencesPage()
         # -- profile contents (first block): summary + bullets with command tooltips
         self.info_group = Adw.PreferencesGroup(title=_("Profile contents"),
                                                description=_("Select a profile on the left to see what it changes."))
         self.info_rows = []
         content.add(self.info_group)
+
+        # -- actions right under the profile description
+        actions = Adw.PreferencesGroup()
+        box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=6)
+        self.apply_btn = Gtk.Button(label=_("Apply…"), css_classes=["suggested-action", "pill"],
+                                    sensitive=False)
+        self.apply_btn.connect("clicked", self._on_apply_clicked)
+        remote = Gtk.Button(label=_("Enable Remote Work"), css_classes=["pill"])
+        remote.connect("clicked", lambda *_a: self._confirm(self._find("RemoteWork")))
+        restore = Gtk.Button(label=_("Restore previous"), css_classes=["pill"])
+        restore.connect("clicked", self._on_restore)
+        for b in (self.apply_btn, remote, restore):
+            box.append(b)
+        actions.add(box)
+        content.add(actions)
+
         grp = Adw.PreferencesGroup(title=_("Status"))
         self.rows = {}
         for key in ("active", "battery", "temp", "conn", "mode", "wifips", "sessions"):
@@ -86,19 +102,6 @@ class MainWindow(Adw.ApplicationWindow):
             mgrp.add(r)
         content.add(mgrp)
 
-        actions = Adw.PreferencesGroup()
-        box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=6)
-        self.apply_btn = Gtk.Button(label=_("Apply…"), css_classes=["suggested-action", "pill"],
-                                    sensitive=False)
-        self.apply_btn.connect("clicked", self._on_apply_clicked)
-        remote = Gtk.Button(label=_("Enable Remote Work"), css_classes=["pill"])
-        remote.connect("clicked", lambda *_a: self._confirm(self._find("RemoteWork")))
-        restore = Gtk.Button(label=_("Restore previous"), css_classes=["pill"])
-        restore.connect("clicked", self._on_restore)
-        for b in (self.apply_btn, remote, restore):
-            box.append(b)
-        actions.add(box)
-        content.add(actions)
         split.set_content(Adw.NavigationPage(title="PowerDeck", child=content))
 
         self.toasts.set_child(split)
@@ -117,7 +120,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.listbox.remove(child)
             child = nxt
         for p in self.profiles:
-            row = Adw.ActionRow(title=p.name, subtitle=p.description)
+            row = Adw.ActionRow(title=p.name, subtitle=GLib.markup_escape_text(_(p.description)))
             row.profile = p
             self.listbox.append(row)
 
