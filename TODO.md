@@ -32,8 +32,8 @@ Najprv bez zmien:
 
 Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng --cpu 0 --timeout 120s` alebo reálna Claude/dev úloha):
 1. `powerdeck monitor --interval 2 --duration 150 --csv /tmp/default.csv` počas záťaže v profile **Default**
-2. `powerdeck apply Travel` (turbo off + max 70 %) a to isté: `--csv /tmp/travel.csv`; potom to isté pre `Rucksack` (max 50 %)
-3. Porovnať teplotu, frekvenciu, príkon (CSV stĺpce `temp_c`, `freq_mhz`, `power_w`, `fan_rpm`) → aká je strata výkonu vs. zníženie teploty? Podľa toho doladiť 70 % / turbo v profiloch.
+2. `powerdeck apply Travel` (turbo off, bez % limitu) a to isté: `--csv /tmp/travel.csv`; potom to isté pre `Rucksack` (max 50 %)
+3. Porovnať teplotu, frekvenciu, príkon (CSV stĺpce `temp_c`, `freq_mhz`, `power_w`, `fan_rpm`) → aká je strata výkonu vs. zníženie teploty? Podľa toho doladiť turbo / % limit v profiloch. Pozor: s vypnutým turbom je `cpuinfo_max_freq` len základný takt (T14s: 1,1 GHz), takže % sa počíta z neho (Rucksack 50 % ≈ 550 MHz).
 - [x] `powerdeck restore` vráti turbo a max. frekvenciu (over cez monitor: `limit 100%`, `turbo on`) ✓ opravené: 100 % sa zapisovalo ako `cpuinfo_max_freq` počas vypnutého turba (1,1 GHz) a po zapnutí turba ostal strop; teraz helper zapíše 100 GHz, ktoré kernel oreže
 - [ ] Po reštarte sú limity späť na predvolené (sysfs sa nezachováva) – to je zámer; ak ich chceš trvalé, treba systemd službu pri štarte
 - [ ] Prvý `pkexec` dialóg ukáže nový text „Change laptop power settings (lid behaviour, CPU limits)“; po zmene politiky treba znova `sudo scripts/install-helper.sh` (alebo nový `.deb`)
@@ -52,7 +52,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - Viacnásobný rollback (každé `restore` vráti ďalšiu zálohu)
 - Editor/tvorba profilov v GUI, chybové dialógy, ikona, `.desktop`, AppStream
 - Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
-- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off + 70 %, **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Gaming ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
+- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off (bez % limitu; 70 % s vypnutým turbom = 770 MHz, príliš málo), **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Gaming ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
 - Monitoring: `powerdeck monitor [--csv FILE] [--duration N]` + živá skupina v GUI (teplota, frekvencia, limit, turbo, záťaž, príkon, ventilátor)
 - CI (`.github/workflows/tests.yml`), `.deb` (`scripts/build-deb.sh`)
 
