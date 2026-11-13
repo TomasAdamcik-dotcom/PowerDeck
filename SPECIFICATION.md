@@ -10,7 +10,7 @@ PowerDeck je nástroj pre Ubuntu na prepínanie **profilov notebooku** (veko, us
 
 Hlavný scenár (**RemoteWork / Travel**): používateľ zavrie notebook, dá ho do ruksaku, pripojí cez tethering z telefónu a notebook ostane zapnutý a dostupný – beží dlhá Claude session, SSH, RDP, dev servery, VPN.
 
-Krátky popis: *PowerDeck lets you switch laptop profiles for work, travel, battery and gaming.*
+Krátky popis: *PowerDeck lets you switch laptop profiles for work, travel, battery life and maximum performance.*
 
 ## 2. Čo sa dá a čo nie (zhodnotenie uskutočniteľnosti)
 
@@ -148,11 +148,11 @@ sensors
 | **RemoteWork** | cestovanie/práca mimo domova | ignore | vypnutý | off (pre vybrané siete) | balanced |
 | **Travel** | (variant RemoteWork) zameraný na ruksak: prísnejší thermal guard, USB tethering | ignore | vypnutý | off | balanced / power-saver pri prehriatí |
 | **BatterySaver** | max. výdrž | suspend | zapnutý | on | power-saver, nižší jas, voliteľne vypnutý BT |
-| **Gaming** | výkon, po skončení návrat na predošlý profil | suspend | zapnutý | default | performance |
+| **Max Performance** | výkon, po skončení návrat na predošlý profil | suspend | zapnutý | default | performance |
 | **Presentation** | obrazovka nezhasína, bez uspania | – | vypnutý | default | balanced |
 | *vlastné* | používateľom vytvorené | | | | |
 
-**Prvá verzia (MVP):** `Default`, `RemoteWork`, `BatterySaver`, `Gaming` + vlastné profily. `Travel` a `Presentation` neskôr.
+**Prvá verzia (MVP):** `Default`, `RemoteWork`, `BatterySaver`, `Max Performance` + vlastné profily. `Travel` a `Presentation` neskôr.
 
 ## 6. Formát profilu (zjednotený návrh)
 
@@ -208,7 +208,7 @@ Aktuálny profil · Wi‑Fi (SSID, powersave) · tethering/aktívne spojenie · 
 ## 10. Verzia 1 – rozsah
 
 - GUI na tvorbu a prepínanie profilov, CLI.
-- Predpripravené: `Default`, `RemoteWork`, `BatterySaver`, `Gaming`.
+- Predpripravené: `Default`, `RemoteWork`, `BatterySaver`, `Max Performance`.
 - Veko, suspend, Wi‑Fi powersave, power mode.
 - Zobrazenie aktuálneho profilu a stavu.
 - Potvrdenie + diff pred systémovými zmenami, zálohy a obnovenie.

@@ -36,8 +36,9 @@ def main(argv=None) -> int:
     profiles = {p.name: p for p in load_profiles()}
     if a.cmd == "list":
         active = engine.active_profile()
+        w = max(map(len, profiles)) + 2
         for n, p in profiles.items():
-            print(f"{'*' if n == active else ' '} {n:14} {p.description}")
+            print(f"{'*' if n == active else ' '} {n:{w}} {p.description}")
         return 0
     if a.cmd == "status":
         from dataclasses import asdict
