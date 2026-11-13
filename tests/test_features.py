@@ -148,6 +148,6 @@ def test_status_battery_temp_and_wifi(tmp_path):
 
 
 def test_all_builtin_profiles_valid():
-    assert {"Default", "RemoteWork", "Travel", "Rucksack", "BatterySaver", "Gaming", "Presentation"} <= set(BY)
+    assert {"Default", "RemoteWork", "Travel", "Rucksack", "BatterySaver", "Max Performance", "Presentation"} <= set(BY)
     for p in BUILTIN_PROFILES:
         p.validate()

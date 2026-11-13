@@ -1,4 +1,4 @@
-"""Built-in profiles (v1: Default, RemoteWork, BatterySaver, Gaming)."""
+"""Built-in profiles (v1: Default, RemoteWork, BatterySaver, Max Performance)."""
 from .profile import Profile
 
 BUILTIN_PROFILES = [
@@ -71,7 +71,7 @@ BUILTIN_PROFILES = [
         builtin=True,
     ),
     Profile(
-        name="Gaming",
+        name="Max Performance",
         description="Maximum performance.",
         automatic_suspend={"battery": True, "ac": False},
         wifi_powersave="default",

@@ -47,12 +47,12 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - Úlohy `on_activate`/`on_deactivate` – **iba** `systemctl --user start|stop|restart UNIT` (whitelist; validované pri načítaní profilu)
 - Thermal guard (`powerdeck guard`): notifikácia pri `warn`, pri `critical` prepne na power-saver + notifikácia; upozornenie pri nízkej batérii s ignorovaným vekom; udalosti sa spúšťajú len pri zhoršení (bez spamu)
 - Stav: SSH/RDP spojenia, login sessions, skutočný Wi‑Fi powersave (`iw`), priemer cez viac batérií, výber CPU senzora podľa typu zóny
-- Profily `Travel`, `Rucksack`, `Presentation`; Gaming „návrat“ = `restore`
+- Profily `Travel`, `Rucksack`, `Presentation`; Max Performance „návrat“ = `restore`
 - `snapshot` – Default zo skutočného stavu systému
 - Viacnásobný rollback (každé `restore` vráti ďalšiu zálohu)
 - Editor/tvorba profilov v GUI, chybové dialógy, ikona, `.desktop`, AppStream
 - Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
-- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off (bez % limitu; 70 % s vypnutým turbom = 770 MHz, príliš málo), **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Gaming ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
+- Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off (bez % limitu; 70 % s vypnutým turbom = 770 MHz, príliš málo), **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Max Performance ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
 - Monitoring: `powerdeck monitor [--csv FILE] [--duration N]` + živá skupina v GUI (teplota, frekvencia, limit, turbo, záťaž, príkon, ventilátor)
 - CI (`.github/workflows/tests.yml`), `.deb` (`scripts/build-deb.sh`)
 
@@ -63,7 +63,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [ ] **USB autosuspend** – závislé na HW (sysfs/udev/TLP, root); netýka sa bezpečne bez konkrétneho zariadenia
 - [ ] **Voľba sietí zo zoznamu uložených NM profilov** v editore (dnes text oddelený čiarkou) – dá sa, ale je to UX rozhodnutie
 - [ ] **Mazanie vlastných profilov** z GUI
-- [ ] **Gaming**: automatický návrat po skončení hry (detekcia procesu) – dnes ručne cez Restore
+- [ ] **Max Performance**: automatický návrat po skončení náročnej úlohy/hry (detekcia procesu) – dnes ručne cez Restore
 - [ ] **GUI testy v CI** (headless GTK vyžaduje balíky na runneri); smoke test je len ručný (`xvfb-run`)
 - [ ] **gettext** namiesto slovníka v `i18n.py` (až keď sa texty ustália)
 - [ ] **Edit sloty špecifické pre dock/AC** v editore (dnes jedna hodnota pre všetky tri stavy veka)

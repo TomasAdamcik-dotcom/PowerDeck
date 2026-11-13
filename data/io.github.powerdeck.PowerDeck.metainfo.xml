@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>io.github.powerdeck.PowerDeck</id>
   <name>PowerDeck</name>
-  <summary>Switch laptop profiles for work, travel, battery and gaming</summary>
+  <summary>Switch laptop profiles for work, travel, battery life and maximum performance</summary>
   <summary xml:lang="sk">Prepínanie profilov notebooku pre prácu, cestovanie, batériu a hranie</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>LicenseRef-proprietary</project_license>
