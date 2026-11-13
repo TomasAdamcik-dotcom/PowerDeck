@@ -84,13 +84,14 @@ def describe(p: Profile) -> Description:
         val = WIFI_VALUE[p.wifi_powersave]
         if p.preferred_networks:
             text = _("Wi-Fi powersave: {} – for: {}").format(_(WIFI_TEXT[p.wifi_powersave]),
-                                                          ", ".join(p.preferred_networks))
+                                                            ", ".join(p.preferred_networks))
             cmds = [["nmcli", "connection", "modify", n, "802-11-wireless.powersave", val]
                     for n in p.preferred_networks]
         else:
-            text = _("Wi-Fi powersave: {} (for the saved networks listed in the profile)").format(
+            text = _("Wi-Fi powersave: {} – for all saved Wi-Fi networks").format(
                 _(WIFI_TEXT[p.wifi_powersave]))
-            cmds = [["nmcli", "connection", "modify", "<" + _("network") + ">",
+            cmds = [["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"],
+                    ["nmcli", "connection", "modify", "<" + _("each Wi-Fi network") + ">",
                      "802-11-wireless.powersave", val]]
         items.append(Item(text, cmds, _("NetworkManager values: 0 default, 2 off, 3 on. "
                                         "Networks not saved on this PC are skipped.")))
@@ -117,8 +118,12 @@ def describe(p: Profile) -> Description:
                             "Resets after reboot. Needs admin rights.")))
     if "max_freq_percent" in p.cpu:
         m = p.cpu["max_freq_percent"]
-        text = (_("CPU max frequency: no limit (100 %)") if m == 100
-                else _("CPU max frequency limited to {} % of the hardware maximum").format(m))
+        if m == 100 and p.cpu.get("turbo") is False:
+            text = _("No extra CPU frequency cap on top of turbo off (removes a cap left by another profile)")
+        elif m == 100:
+            text = _("CPU max frequency: no limit (100 %)")
+        else:
+            text = _("CPU max frequency limited to {} % of the hardware maximum").format(m)
         items.append(Item(text, [backends._helper_argv("set-cpu-max-percent", str(m))],
                           _("Writes scaling_max_freq for every core in /sys/devices/system/cpu. "
                             "Resets after reboot. Needs admin rights.")))
@@ -127,7 +132,9 @@ def describe(p: Profile) -> Description:
     if "blank_after_minutes" in d:
         m = d["blank_after_minutes"]
         text = _("Screen never blanks when idle") if m == 0 else _("Screen blanks after {} min idle").format(m)
-        items.append(Item(text, [_gs("org.gnome.desktop.session", "idle-delay", m * 60)]))
+        note = (_("Blanking starts the GNOME screensaver, which would drop remote desktop (RDP).")
+                if m == 0 and p.remote_access else "")
+        items.append(Item(text, [_gs("org.gnome.desktop.session", "idle-delay", m * 60)], note))
     if "lock_after_minutes" in d:
         m = d["lock_after_minutes"]
         cmds = [_gs("org.gnome.desktop.screensaver", "lock-enabled", "true" if m else "false")]
@@ -166,9 +173,13 @@ def describe(p: Profile) -> Description:
 
     tg = p.thermal_guard
     if tg:
+        if p.power_mode == "power-saver":
+            ttext = _("Thermal guard: notification at {} °C, urgent alert at {} °C "
+                      "(power-saver is already on, so it can only warn)")
+        else:
+            ttext = _("Thermal guard: notification at {} °C, at {} °C it switches to power-saver")
         items.append(Item(
-            _("Thermal guard: warning at {} °C, critical at {} °C (switches to power-saver)").format(
-                tg["warn_celsius"], tg["critical_celsius"]),
+            ttext.format(tg["warn_celsius"], tg["critical_celsius"]),
             [["systemctl", "--user", "enable", "--now", "powerdeck-guard.service"]],
             _("The guard service runs `powerdeck guard` and sends desktop notifications. "
               "It must be enabled once.")))

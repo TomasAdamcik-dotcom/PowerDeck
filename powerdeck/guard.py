@@ -73,6 +73,17 @@ def dismiss_screensaver(run: Runner = system_runner) -> bool:
     return True
 
 
+def critical_reaction(run: Runner, temp: float | None) -> str:
+    """Switch to power-saver only if it is not on already; the message says what really happened."""
+    t = "?" if temp is None else f"{temp:.0f}"
+    rc, mode = run(["powerprofilesctl", "get"])
+    if rc == 0 and mode.strip() == "power-saver":
+        return (f"{t} °C even with power-saver on – take the laptop out of the bag "
+                "or stop the load.")
+    run(["powerprofilesctl", "set", "power-saver"])  # reversible, non-destructive reaction
+    return f"{t} °C – switched to power-saver. Let it cool down."
+
+
 def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
     prof = _active(profiles)
     if prof is not None and prof.remote_access:
@@ -83,8 +94,7 @@ def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
         if ev == "warn":
             _notify(run, "PowerDeck: CPU is hot", f"{s.cpu_temp_c:.0f} °C – take the laptop out of the bag or reduce load.")
         elif ev == "critical":
-            run(["powerprofilesctl", "set", "power-saver"])  # reversible, non-destructive reaction
-            _notify(run, "PowerDeck: CPU critical", f"{s.cpu_temp_c:.0f} °C – switched to power-saver. Let it cool down.", True)
+            _notify(run, "PowerDeck: CPU critical", critical_reaction(run, s.cpu_temp_c), True)
         elif ev == "low_battery":
             _notify(run, "PowerDeck: battery low", f"{s.battery_percent} % with the lid-ignore profile active. "
                     "Plug in power or restore the default profile.", True)

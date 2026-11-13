@@ -28,7 +28,7 @@ def test_rucksack_bullets_in_plain_language():
     assert "Closing the lid does nothing – the PC keeps running" in texts
     assert any("turbo/boost off" in t for t in texts)
     assert any("limited to 50 %" in t for t in texts)
-    assert any(t.startswith("Thermal guard: warning at 70") for t in texts)
+    assert any(t.startswith("Thermal guard: notification at 70") and "can only warn" in t for t in texts)
 
 
 def test_lid_warning_flag_and_commands():
@@ -67,3 +67,39 @@ def test_slovak(monkeypatch):
     d = describe(BY["Rucksack"])
     assert "Zavretie veka nič nerobí – PC beží ďalej" in [i.text for i in d.items]
     assert d.summary.startswith("Notebook zavretý v taške")
+
+
+def test_no_contradicting_texts_in_builtin_profiles():
+    for p in BUILTIN_PROFILES:
+        texts = [i.text for i in describe(p).items]
+        joined = " | ".join(texts)
+        if p.power_mode == "power-saver":
+            assert "switches to power-saver" not in joined, p.name
+        if p.cpu.get("turbo") is False:
+            assert "no limit" not in joined, p.name
+        assert "listed in the profile" not in joined           # no promise the code would not keep
+        for t in texts:
+            assert texts.count(t) == 1, (p.name, t)              # no duplicate bullets
+        cmds = [c for i in describe(p).items for c in map(tuple, i.commands)]
+        writes = [c[:4] for c in cmds if c[:2] == ("gsettings", "set")]
+        assert len(writes) == len(set(writes)), p.name          # no gsettings key written twice
+
+
+def test_thermal_text_for_balanced_profile():
+    t = [i.text for i in describe(BY["RemoteWork"]).items if i.text.startswith("Thermal")][0]
+    assert "switches to power-saver" in t
+
+
+def test_language_selection(monkeypatch):
+    from powerdeck import i18n
+    for k in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("LANG", "sk_SK.UTF-8")
+    assert i18n._("Battery") == "Batéria"
+    monkeypatch.setenv("LANGUAGE", "de_DE:sk")            # GNOME language wins; no German → English
+    assert i18n._("Battery") == "Battery"
+    monkeypatch.setenv("LANGUAGE", "sk:en")
+    assert i18n._("Battery") == "Batéria"
+    monkeypatch.setenv("LANGUAGE", "")
+    monkeypatch.setenv("LC_ALL", "C")
+    assert i18n._("Battery") == "Battery"
