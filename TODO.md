@@ -88,7 +88,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [x] Aktívny profil v hornej lište („Aktívny profil: …“ / „Žiadny profil nie je aktivovaný“) a orámovaná dlaždica v zozname; riadok „Aktívny profil“ v Stave odstránený (bol by duplicitný); screenshoty v `docs/` + `scripts/screenshot.py`
 - [x] Poradie vpravo: obsah profilu → tlačidlá → Stav → Monitoring; popisy profilov v zozname vľavo sa prekladajú
 - [ ] Info ikona: v cloude (iná téma ikon) vyzerá ako žiarovka – na Ubuntu (Yaru) by mala byť „i“, overiť
-- [ ] Pri redizajne nahradiť zastaraný `Adw.MessageDialog` za `Adw.AlertDialog` (libadwaita 1.9 na Ubuntu 26.04 hlási DeprecationWarning)
+- [x] Pri redizajne nahradiť zastaraný `Adw.MessageDialog` za `Adw.AlertDialog` (libadwaita 1.9 na Ubuntu 26.04 hlási DeprecationWarning); vyžaduje libadwaita ≥ 1.5
 - [x] Tooltipy pri riadkoch v „Stave“ a „Monitoringu“ (čo hodnota znamená + príkaz/súbor, odkiaľ sa berie); teplota CPU je už len v Monitoringu (bola duplicitne aj v Stave)
 - [x] Odrážky obsahu profilu kompaktnejšie (riadok 50 → 33 px, polovica voľného miesta hore aj dole)
 - [x] Jazyk podľa prostredia (`LANGUAGE`, potom `LC_ALL`/`LC_MESSAGES`/`LANG`); jazyk bez prekladu → angličtina
