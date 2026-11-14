@@ -41,6 +41,13 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [ ] GUI: po kliknutí na profil sa hore vpravo ukáže „Obsah profilu“ (popis + odrážky); info ikona pri odrážke ukáže príkaz po nabehnutí myšou, kliknutie ho skopíruje – skontroluj vzhľad, čitateľnosť tooltipu a že texty sedia v SK aj EN
 - [ ] GUI: skupina „Monitoring“ sa obnovuje každé 2 s, level bary fungujú, nespomaľuje to appku
 
+## 0c. Uspanie pri kritickej teplote a odinštalovanie (nové, treba reálny HW)
+
+- [ ] Uspanie pri kritickej teplote bez čakania na skutočné prehriatie: dočasne si v editore daj vlastný profil s nízkym prahom (napr. warn 40 / critical 45 °C), aplikuj ho, spusti `powerdeck guard --once` → má prísť notifikácia „PowerDeck: uspávam – dosiahnutá maximálna teplota“ a o 5 s sa notebook uspí
+- [ ] To isté so spustenou aplikáciou, ktorá blokuje uspanie (napr. Claude Desktop): `systemctl suspend` zlyhá a guard použije `pkexec /usr/libexec/powerdeck-suspend` – **overiť, že polkit to pustí bez hesla aj zo systemd user služby** (akcia `io.github.powerdeck.thermal-suspend`, `allow_active=yes`; služba nie je v logind relácii, polkit ju má priradiť ku grafickej relácii používateľa)
+- [ ] Odinštalovanie: aplikuj napr. Rucksack, potom `sudo apt remove powerdeck` → nastavenia ako pred PowerDeckom (veko, gsettings, Wi‑Fi powersave, power mode, Bluetooth, turbo/CPU limit), guard služba zastavená. V kontajneri overené len pre gsettings + drop-in veka (bez systemd/NetworkManager)
+- [ ] `apt` upgrade (nová verzia `.deb`) nastavenia **nesmie** vrátiť – prerm robí reset len pri „remove“
+
 ## 1. Hotové (od v0.1)
 
 - Polkit politika + root-owned helper `/usr/libexec/powerdeck-helper`, inštalačný skript, GUI hlási chýbajúci helper
@@ -57,6 +64,8 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - Logy: `~/.local/state/powerdeck/logs/powerdeck.log`
 - Limit CPU v profile (`cpu`: `turbo`, `max_freq_percent`) cez root helper (`set-cpu-turbo`, `set-cpu-max-percent`, len whitelistované hodnoty 10–100 %); Travel = turbo off (bez % limitu; 70 % s vypnutým turbom = 770 MHz, príliš málo), **Rucksack = najprísnejší (turbo off, max 50 %, power-saver, BT off, thermal 70/82 °C)**, Default/Max Performance ho vracajú na 100 %/turbo on; `snapshot` ho zachytáva
 - Monitoring: `powerdeck monitor [--csv FILE] [--duration N]` + živá skupina v GUI (teplota, frekvencia, limit, turbo, záťaž, príkon, ventilátor)
+- Kritická teplota → notifikácia „uspávam – dosiahnutá maximálna teplota“, 5 s, potom `systemctl suspend`; ak uspanie blokuje aplikácia, malý root helper `/usr/libexec/powerdeck-suspend` (vlastná polkit akcia, vie len uspať); ak nejde ani to, druhá notifikácia „uspanie zlyhalo“
+- Odinštalovanie (`apt remove`, `install-helper.sh --uninstall`) vráti všetky nastavenia do stavu pred PowerDeckom: `powerdeck reset-all` vráti všetky zálohy od najnovšej (systémové časti ako root, gsettings ako daný používateľ), zastaví guard, odstráni drop-in veka, turbo on + bez limitu CPU
 - CI (`.github/workflows/tests.yml`), `.deb` (`scripts/build-deb.sh`)
 
 ## 2. Ostáva — potrebuje tvoje rozhodnutie alebo reálny HW
@@ -91,4 +100,4 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 2. ~~HUP vs. reštart `systemd-logind`~~ – HUP stačí (overené)
 3. RDP (`gnome-remote-desktop`) so zavretým vekom a zamknutou obrazovkou
 4. HW: ThinkPad T14s Gen 4, `x86_pkg_temp`/`TCPU` zóny, `power-profiles-daemon` (intel_pstate + platform_profile), ventilátor cez `thinkpad` hwmon
-5. Thermal guard reaguje len prepnutím na power-saver – stačí, alebo má pri critical aj aplikovať Default?
+5. ~~Thermal guard pri critical~~ – rozhodnuté: notifikácia + uspanie

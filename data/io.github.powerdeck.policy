@@ -19,4 +19,20 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/powerdeck-helper</annotate>
   </action>
+
+  <!-- Thermal suspend: only suspends (ignoring inhibitors). Allowed without a password for the
+       active local user so the guard can protect an overheating laptop in a closed bag. -->
+  <action id="io.github.powerdeck.thermal-suspend">
+    <description>Suspend an overheating laptop</description>
+    <description xml:lang="sk">Uspať prehriaty notebook</description>
+    <message>PowerDeck wants to suspend the laptop because the CPU reached its maximum temperature</message>
+    <message xml:lang="sk">PowerDeck chce uspať notebook, lebo CPU dosiahol maximálnu teplotu</message>
+    <icon_name>preferences-system-power</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/powerdeck-suspend</annotate>
+  </action>
 </policyconfig>

@@ -20,6 +20,10 @@ Installs a root-owned `/usr/libexec/powerdeck-helper` and a polkit policy. The h
 scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb   # installs app, helper, polkit policy, desktop entry
 ```
 
+## Uninstall
+
+`sudo apt remove powerdeck` (or `sudo scripts/install-helper.sh --uninstall`) first puts every setting back the way it was before PowerDeck (`powerdeck reset-all` for each user), stops the guard, then removes the files.
+
 ## Run
 
 ```bash

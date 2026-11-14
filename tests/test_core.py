@@ -180,3 +180,17 @@ def test_wifi_without_listed_networks_covers_all_saved_wifi():
     wifi = [c for c in plan.changes if c.target.startswith("Wi-Fi powersave")]
     assert {c.apply_argv[3] for c in wifi} == {"MojTelefon", "Café:5G"}   # not the wired one
     assert all(c.new == "2" for c in wifi)
+
+
+def test_thermal_suspend_policy_matches_guard_and_is_minimal():
+    import xml.etree.ElementTree as ET
+    from pathlib import Path
+    from powerdeck import guard
+    base = Path(__file__).parent.parent
+    act = ET.parse(base / "data" / "io.github.powerdeck.policy").getroot().find(
+        ".//action[@id='io.github.powerdeck.thermal-suspend']")
+    assert act.find("annotate").text == guard.SUSPEND_HELPER
+    assert act.find(".//allow_active").text == "yes" and act.find(".//allow_any").text == "no"
+    script = (base / "data" / "powerdeck-suspend").read_text()
+    cmds = [l for l in script.splitlines() if l.strip() and not l.startswith("#")]
+    assert cmds == ["exec /usr/bin/systemctl suspend --ignore-inhibitors"]   # nothing else, no args

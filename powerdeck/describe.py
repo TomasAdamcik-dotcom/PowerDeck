@@ -173,16 +173,13 @@ def describe(p: Profile) -> Description:
 
     tg = p.thermal_guard
     if tg:
-        if p.power_mode == "power-saver":
-            ttext = _("Thermal guard: notification at {} °C, urgent alert at {} °C "
-                      "(power-saver is already on, so it can only warn)")
-        else:
-            ttext = _("Thermal guard: notification at {} °C, at {} °C it switches to power-saver")
+        ttext = _("Thermal guard: notification at {} °C; at {} °C it notifies and suspends the laptop")
         items.append(Item(
             ttext.format(tg["warn_celsius"], tg["critical_celsius"]),
             [["systemctl", "--user", "enable", "--now", "powerdeck-guard.service"]],
-            _("The guard service runs `powerdeck guard` and sends desktop notifications. "
-              "It must be enabled once.")))
+            _("The guard service runs `powerdeck guard`. At the critical temperature it sends a "
+              "notification, waits 5 s and runs `systemctl suspend` (if an app blocks sleep: "
+              "pkexec /usr/libexec/powerdeck-suspend, which ignores inhibitors). Enable it once.")))
 
     for key, label in (("on_activate", "On activate"), ("on_deactivate", "On leaving")):
         for cmd in p.tasks.get(key, []):

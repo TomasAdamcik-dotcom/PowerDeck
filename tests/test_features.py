@@ -42,7 +42,7 @@ class Fake:
             if a[1] == "get":
                 return 0, self.mode
             self.mode = a[2]; return 0, ""
-        if a[0] in ("systemctl", "notify-send", "pkexec"):
+        if a[0] in ("systemctl", "notify-send", "pkexec", backends.HELPER_PATH):
             return 0, ""
         return 127, ""
 
@@ -112,13 +112,18 @@ def test_guard_events_only_on_worsening():
     _, ev = guard.evaluate(95, 5, "Discharging", BY["Default"], guard.GuardState()); assert ev == []
 
 
-def test_guard_critical_throttles_and_notifies(monkeypatch):
+def test_guard_critical_notifies_then_suspends(monkeypatch):
     f = Fake()
+    monkeypatch.setattr(guard.time, "sleep", lambda s: f.calls.append(["sleep", s]))
     monkeypatch.setattr(guard, "read_status", lambda run: status.Status(50, "Discharging", 95, None, None))
     monkeypatch.setattr(engine, "active_profile", lambda: "RemoteWork")
     guard.run_once(guard.GuardState(), f, {"RemoteWork": BY["RemoteWork"]})
-    assert f.mode == "power-saver" and any(c[0] == "notify-send" for c in f.calls)
-
+    names = [c[0] for c in f.calls if c[0] in ("notify-send", "sleep", "systemctl")]
+    assert names == ["notify-send", "sleep", "systemctl"]          # tell first, then wait, then sleep
+    note = next(c for c in f.calls if c[0] == "notify-send")
+    assert "maximum temperature" in note[-2] and "92" in note[-1]
+    assert ["systemctl", "suspend"] in f.calls
+    assert f.mode == "balanced"                                     # no power-saver switch any more
 
 def test_capture_current_profile():
     f = Fake()
@@ -251,12 +256,74 @@ def test_remote_access_notes():
     assert not any("guard" in n for n in guard.remote_access_notes(manual))   # `powerdeck guard` by hand
 
 
-def test_guard_critical_does_not_claim_a_switch_that_did_not_happen():
+def test_guard_suspend_falls_back_to_helper_when_inhibited(monkeypatch, tmp_path):
+    helper_path = tmp_path / "powerdeck-suspend"
+    helper_path.write_text("#!/bin/sh\n"); helper_path.chmod(0o755)
+    monkeypatch.setattr(guard, "SUSPEND_HELPER", str(helper_path))
+    calls = []
+    def run(a):
+        calls.append(a)
+        if a == ["systemctl", "suspend"]:
+            return 1, "Operation inhibited by \"Claude\""
+        return 0, ""
+    assert guard.critical_reaction(run, 90, 88, sleep=lambda s: None) is True
+    assert ["pkexec", str(helper_path)] in calls
+
+
+def test_guard_reports_when_suspend_impossible(monkeypatch, tmp_path):
+    monkeypatch.setattr(guard, "SUSPEND_HELPER", str(tmp_path / "missing"))
+    calls = []
+    def run(a):
+        calls.append(a)
+        return (1, "denied") if a[0] == "systemctl" else (0, "")
+    assert guard.critical_reaction(run, 90, 88, sleep=lambda s: None) is False
+    notes = [c for c in calls if c[0] == "notify-send"]
+    assert len(notes) == 2 and "could not suspend" in notes[1][-2]
+
+
+
+def _two_applies(tmp_path):
+    """Default → RemoteWork-like → stricter: two backups, newest must be undone first."""
     f = Fake()
-    f.mode = "power-saver"
-    msg = guard.critical_reaction(f, 90)
-    assert "already" in msg or "even with power-saver" in msg
-    assert ["powerprofilesctl", "set", "power-saver"] not in f.calls
-    f2 = Fake()
-    msg = guard.critical_reaction(f2, 90)
-    assert "switched to power-saver" in msg and f2.mode == "power-saver"
+    p1 = Profile(name="A", lid={"battery": "ignore", "ac": "ignore", "docked": "ignore"},
+                 display={"blank_after_minutes": 0}, tethering={"connection": "Tel", "priority": 100})
+    p2 = Profile(name="B", display={"blank_after_minutes": 1}, bluetooth=False)
+    for p in (p1, p2):
+        assert engine.apply_plan(engine.make_plan(p, f), f, tmp_path / "b", tmp_path / "a.json") == []
+    return f
+
+
+def test_reset_all_restores_pre_powerdeck_state(tmp_path):
+    f = _two_applies(tmp_path)
+    assert f.gs["idle-delay"] == "60" and f.bt_blocked and f.nm["Tel"] == ["yes", "100"]
+    assert engine.reset_all(f, tmp_path / "b", active_file=tmp_path / "a.json") == []
+    assert f.gs["idle-delay"] == "300" and not f.bt_blocked and f.nm["Tel"] == ["no", "0"]
+    assert ["pkexec", backends.HELPER_PATH, "remove-lid"] in f.calls
+    assert not list((tmp_path / "b").glob("*.json")) and not (tmp_path / "a.json").exists()
+    assert engine.reset_all(f, tmp_path / "b") == []            # second run: nothing left to do
+
+
+def test_reset_all_split_into_root_and_user_passes(tmp_path):
+    f = _two_applies(tmp_path)
+    n = len(f.calls)
+    assert engine.reset_all(f, tmp_path / "b", only="system", mark_restored=False) == []
+    system_calls = f.calls[n:]
+    assert all(c[0] != "gsettings" for c in system_calls)
+    assert [backends.HELPER_PATH, "remove-lid"] in system_calls     # root: no pkexec
+    assert f.gs["idle-delay"] == "60" and not f.bt_blocked           # gsettings untouched yet
+    assert list((tmp_path / "b").glob("*.json"))                     # kept for the user pass
+    n = len(f.calls)
+    assert engine.reset_all(f, tmp_path / "b", only="user", active_file=tmp_path / "a.json") == []
+    assert all(c[0] == "gsettings" for c in f.calls[n:])
+    assert f.gs["idle-delay"] == "300"
+
+
+def test_reset_all_continues_after_errors(tmp_path):
+    f = _two_applies(tmp_path)
+    def flaky(a):
+        if a[0] == "rfkill":
+            return 1, "rfkill: blocked by policy"
+        return f(a)
+    errs = engine.reset_all(flaky, tmp_path / "b", active_file=tmp_path / "a.json")
+    assert errs == ["Bluetooth: rfkill: blocked by policy"]
+    assert f.gs["idle-delay"] == "300"                               # the rest still reverted

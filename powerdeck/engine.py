@@ -120,6 +120,47 @@ def restore_last(run: Runner = system_runner, backup_dir: Path | None = None,
     return errors
 
 
+# Which reverts can run where during uninstall: gsettings live in the user's dconf and
+# user tasks in the user's systemd, everything else is system state that root can revert.
+USER_BACKENDS = ("gsettings", "task")
+
+
+def reset_all(run: Runner = system_runner, backup_dir: Path | None = None, only: str | None = None,
+              mark_restored: bool = True, active_file: Path | None = None) -> list[str]:
+    """Undo EVERY applied profile (newest first) → settings as they were before PowerDeck.
+
+    ``only="user"`` reverts just gsettings/tasks (run as the user), ``only="system"`` everything
+    else and calls the root helper directly instead of via pkexec (run as root while
+    uninstalling). Errors are collected; the remaining reverts still run.
+    """
+    backup_dir = backup_dir or paths.backups_dir()
+    files = sorted(backup_dir.glob("*.json"), reverse=True) if backup_dir.is_dir() else []
+    errors: list[str] = []
+    for f in files:
+        try:
+            data = json.loads(f.read_text())
+        except (OSError, ValueError) as e:
+            errors.append(f"{f.name}: {e}")
+            continue
+        for d in reversed(data.get("changes", [])):
+            c = Change.from_dict(d)
+            if not c.revert_argv:
+                continue
+            is_user = c.backend in USER_BACKENDS
+            if (only == "user" and not is_user) or (only == "system" and is_user):
+                continue
+            argv = c.revert_argv[1:] if only == "system" and c.revert_argv[0] == "pkexec" else c.revert_argv
+            rc, out = run(argv)
+            if rc != 0:
+                errors.append(f"{c.target}: {out or 'failed'}")
+        log.info("reset: reverted %s (only=%s)", f.name, only or "all")
+    if mark_restored:
+        for f in files:
+            f.rename(f.with_suffix(".restored"))
+        (active_file or paths.state_dir() / "active.json").unlink(missing_ok=True)
+    return errors
+
+
 def active_profile(active_file: Path | None = None) -> str | None:
     try:
         return json.loads((active_file or paths.state_dir() / "active.json").read_text())["profile"]

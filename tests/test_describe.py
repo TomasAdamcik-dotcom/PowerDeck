@@ -28,7 +28,7 @@ def test_rucksack_bullets_in_plain_language():
     assert "Closing the lid does nothing – the PC keeps running" in texts
     assert any("turbo/boost off" in t for t in texts)
     assert any("limited to 50 %" in t for t in texts)
-    assert any(t.startswith("Thermal guard: notification at 70") and "can only warn" in t for t in texts)
+    assert any(t.startswith("Thermal guard: notification at 70") and "suspends the laptop" in t for t in texts)
 
 
 def test_lid_warning_flag_and_commands():
@@ -87,7 +87,7 @@ def test_no_contradicting_texts_in_builtin_profiles():
 
 def test_thermal_text_for_balanced_profile():
     t = [i.text for i in describe(BY["RemoteWork"]).items if i.text.startswith("Thermal")][0]
-    assert "switches to power-saver" in t
+    assert t == "Thermal guard: notification at 85 °C; at 92 °C it notifies and suspends the laptop"
 
 
 def test_language_selection(monkeypatch):
