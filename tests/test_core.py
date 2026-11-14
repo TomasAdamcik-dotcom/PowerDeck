@@ -251,3 +251,13 @@ def test_malformed_user_profiles_are_skipped(tmp_path, bad):
         Profile.from_dict(bad)
     names = [p.name for p in load_profiles(tmp_path)]       # never crashes, built-ins still there
     assert "X" not in names and "Default" in names
+
+
+def test_restore_reports_broken_backup_instead_of_crashing(tmp_path):
+    b = tmp_path / "b"
+    b.mkdir()
+    (b / "01700000000000000000-X.json").write_text('{"changes": [{"backend": "x"}]}')
+    errs = engine.restore_last(FakeSystem(), b, tmp_path / "a.json")
+    assert len(errs) == 1 and "malformed" in errs[0]
+    (tmp_path / "a.json").write_text("[]")
+    assert engine.active_profile(tmp_path / "a.json") is None
