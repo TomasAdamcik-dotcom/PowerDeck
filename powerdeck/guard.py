@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from . import engine
 from .profile import Profile, load_profiles
 from .runner import Runner, system_runner
+from .i18n import _
 from .status import read_status, thermal_level
 
 log = logging.getLogger(__name__)
@@ -73,15 +74,38 @@ def dismiss_screensaver(run: Runner = system_runner) -> bool:
     return True
 
 
-def critical_reaction(run: Runner, temp: float | None) -> str:
-    """Switch to power-saver only if it is not on already; the message says what really happened."""
+SUSPEND_DELAY_S = 5          # time for the notification to show before the system sleeps
+SUSPEND_HELPER = "/usr/libexec/powerdeck-suspend"  # root, ignores inhibitors (data/*.policy)
+
+
+def suspend_now(run: Runner) -> bool:
+    """Suspend the laptop. Block inhibitors (e.g. an app keeping the PC awake) make plain
+    ``systemctl suspend`` fail, so fall back to the root helper that ignores them."""
+    rc, out = run(["systemctl", "suspend"])
+    if rc == 0:
+        return True
+    log.warning("systemctl suspend failed (%s); trying %s", out, SUSPEND_HELPER)
+    if os.path.isfile(SUSPEND_HELPER) and os.access(SUSPEND_HELPER, os.X_OK):
+        rc, out = run(["pkexec", SUSPEND_HELPER])
+        if rc == 0:
+            return True
+    log.error("thermal suspend failed: %s", out)
+    return False
+
+
+def critical_reaction(run: Runner, temp: float | None, critical: float, sleep=None) -> bool:
+    """Maximum temperature reached: tell the user why, then suspend. Returns True if suspended."""
     t = "?" if temp is None else f"{temp:.0f}"
-    rc, mode = run(["powerprofilesctl", "get"])
-    if rc == 0 and mode.strip() == "power-saver":
-        return (f"{t} °C even with power-saver on – take the laptop out of the bag "
-                "or stop the load.")
-    run(["powerprofilesctl", "set", "power-saver"])  # reversible, non-destructive reaction
-    return f"{t} °C – switched to power-saver. Let it cool down."
+    _notify(run, _("PowerDeck: suspending – maximum temperature reached"),
+            _("CPU reached {} °C (maximum allowed {} °C). The laptop will be suspended in {} s "
+              "to protect the hardware.").format(t, f"{critical:.0f}", SUSPEND_DELAY_S), True)
+    (sleep or time.sleep)(SUSPEND_DELAY_S)
+    log.info("suspending: CPU %s °C >= critical %s °C", t, critical)
+    if suspend_now(run):
+        return True
+    _notify(run, _("PowerDeck: could not suspend"),
+            _("CPU is at {} °C. Shut the laptop down or take it out of the bag now.").format(t), True)
+    return False
 
 
 def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
@@ -92,12 +116,14 @@ def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
     state, events = evaluate(s.cpu_temp_c, s.battery_percent, s.battery_state, prof, state)
     for ev in events:
         if ev == "warn":
-            _notify(run, "PowerDeck: CPU is hot", f"{s.cpu_temp_c:.0f} °C – take the laptop out of the bag or reduce load.")
+            _notify(run, _("PowerDeck: CPU is hot"),
+                    _("{} °C – take the laptop out of the bag or reduce load.").format(f"{s.cpu_temp_c:.0f}"))
         elif ev == "critical":
-            _notify(run, "PowerDeck: CPU critical", critical_reaction(run, s.cpu_temp_c), True)
+            critical_reaction(run, s.cpu_temp_c, prof.thermal_guard["critical_celsius"])
         elif ev == "low_battery":
-            _notify(run, "PowerDeck: battery low", f"{s.battery_percent} % with the lid-ignore profile active. "
-                    "Plug in power or restore the default profile.", True)
+            _notify(run, _("PowerDeck: battery low"),
+                    _("{} % with the lid-ignore profile active. Plug in power or restore the default "
+                      "profile.").format(s.battery_percent), True)
     return state
 
 

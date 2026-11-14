@@ -12,6 +12,8 @@ rm -rf "$OUT" && mkdir -p "$OUT/DEBIAN" "$OUT/usr/bin" "$OUT/usr/libexec" \
 
 install -m 0644 powerdeck/*.py "$OUT/usr/lib/python3/dist-packages/powerdeck/"
 install -m 0755 powerdeck/helper.py "$OUT/usr/libexec/powerdeck-helper"
+install -m 0755 data/powerdeck-suspend "$OUT/usr/libexec/powerdeck-suspend"
+install -m 0755 scripts/uninstall-reset.sh "$OUT/usr/libexec/powerdeck-uninstall-reset"
 install -m 0644 data/io.github.powerdeck.policy "$OUT/usr/share/polkit-1/actions/"
 install -m 0644 data/io.github.powerdeck.PowerDeck.desktop "$OUT/usr/share/applications/"
 install -m 0644 data/io.github.powerdeck.PowerDeck.metainfo.xml "$OUT/usr/share/metainfo/"
@@ -28,12 +30,22 @@ Section: utils
 Priority: optional
 Architecture: all
 Depends: python3 (>= 3.11), python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1, pkexec | policykit-1, network-manager
-Recommends: power-profiles-daemon, libnotify-bin, brightnessctl
+Recommends: power-profiles-daemon, libnotify-bin, brightnessctl, dbus-bin
 Maintainer: PowerDeck <noreply@example.invalid>
 Description: Linux workstation profiles
  Switch laptop profiles (lid, suspend, Wi-Fi powersave, power mode) with
  confirmation, backup and rollback.
 CTL
+# prerm runs while PowerDeck's files still exist: undo everything it changed (only on removal,
+# not on upgrade).
+cat > "$OUT/DEBIAN/prerm" <<'PRERM'
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ]; then
+  /usr/libexec/powerdeck-uninstall-reset || true
+fi
+PRERM
+chmod 0755 "$OUT/DEBIAN/prerm"
 cat > "$OUT/DEBIAN/postrm" <<'RM'
 #!/bin/sh
 set -e

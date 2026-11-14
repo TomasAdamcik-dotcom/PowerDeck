@@ -1,4 +1,4 @@
-"""powerdeck CLI: list | status | plan NAME | apply NAME [-y] | restore"""
+"""powerdeck CLI: list | status | plan NAME | apply NAME [-y] | restore | reset-all | snapshot | monitor | guard"""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,10 @@ def main(argv=None) -> int:
     sub.add_parser("list")
     sub.add_parser("status")
     sub.add_parser("restore")
+    r = sub.add_parser("reset-all", help="undo every applied profile (used when uninstalling)")
+    r.add_argument("--only", choices=("user", "system"))
+    r.add_argument("--backups", help="backup directory (default: your own)")
+    r.add_argument("--no-mark", action="store_true", help="keep backups for a second pass")
     sub.add_parser("snapshot", help="save current system settings as the Default profile")
     m = sub.add_parser("monitor", help="live temperature/frequency/load/power monitor")
     m.add_argument("--interval", type=float, default=2.0)
@@ -59,6 +63,12 @@ def main(argv=None) -> int:
         else:
             guard.loop(a.interval)
         return 0
+    if a.cmd == "reset-all":
+        from pathlib import Path
+        errs = engine.reset_all(backup_dir=Path(a.backups) if a.backups else None,
+                                only=a.only, mark_restored=not a.no_mark)
+        print("\n".join(errs) or "All PowerDeck changes reverted.")
+        return 1 if errs else 0
     if a.cmd == "restore":
         errs = engine.restore_last()
         print("\n".join(errs) or "Restored.")
