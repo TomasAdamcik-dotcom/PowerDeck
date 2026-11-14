@@ -117,6 +117,7 @@ def test_described_commands_are_exactly_what_plan_runs(profile, tmp_path, monkey
 
 
 def test_slovak(monkeypatch):
+    monkeypatch.delenv("LANGUAGE", raising=False)   # takes precedence over LC_ALL, as in glibc
     monkeypatch.setenv("LC_ALL", "sk_SK.UTF-8")
     d = describe(BY["Rucksack"])
     assert "Zavretie veka nič nerobí – PC beží ďalej" in [i.text for i in d.items]
