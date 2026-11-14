@@ -40,6 +40,8 @@ SK = {
     "Wi-Fi networks (comma separated)": "Wi-Fi siete (oddelené čiarkou)",
     "Tethering connection": "Tethering pripojenie",
     "Save": "Uložiť",
+    "Active profile: {}": "Aktívny profil: {}",
+    "No profile activated": "Žiadny profil nie je aktivovaný",
     "Thermal guard: notification at {} °C; at {} °C it notifies and suspends the laptop": "Strážca teploty: upozornenie pri {} °C; pri {} °C upozorní a notebook uspí",
     "The guard service runs `powerdeck guard`. At the critical temperature it sends a notification, waits 5 s and runs `systemctl suspend` (if an app blocks sleep: pkexec /usr/libexec/powerdeck-suspend, which ignores inhibitors). Enable it once.": "Služba strážcu spúšťa `powerdeck guard`. Pri kritickej teplote pošle upozornenie, počká 5 s a spustí `systemctl suspend` (ak uspanie blokuje nejaká aplikácia: pkexec /usr/libexec/powerdeck-suspend, ktorý blokovanie ignoruje). Treba ju raz povoliť.",
     "PowerDeck: suspending – maximum temperature reached": "PowerDeck: uspávam – dosiahnutá maximálna teplota",

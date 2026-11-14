@@ -85,6 +85,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 ## 2b. GUI – redizajn (podľa inštrukcií vlastníka, prebieha)
 
 - [x] Obsah profilu hore vpravo (popis + odrážky + info ikona s príkazom)
+- [x] Aktívny profil v hornej lište („Aktívny profil: …“ / „Žiadny profil nie je aktivovaný“) a orámovaná dlaždica v zozname; riadok „Aktívny profil“ v Stave odstránený (bol by duplicitný); screenshoty v `docs/` + `scripts/screenshot.py`
 - [x] Poradie vpravo: obsah profilu → tlačidlá → Stav → Monitoring; popisy profilov v zozname vľavo sa prekladajú
 - [ ] Info ikona: v cloude (iná téma ikon) vyzerá ako žiarovka – na Ubuntu (Yaru) by mala byť „i“, overiť
 - [ ] Pri redizajne nahradiť zastaraný `Adw.MessageDialog` za `Adw.AlertDialog` (libadwaita 1.9 na Ubuntu 26.04 hlási DeprecationWarning)

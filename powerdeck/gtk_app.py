@@ -31,8 +31,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay()
         view = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        header.set_title_widget(Adw.WindowTitle(title="PowerDeck",
-                                                subtitle=_("PowerDeck — Linux workstation profiles")))
+        # title bar: "PowerDeck" + the active profile (or "No profile activated")
+        self.title = Adw.WindowTitle(title="PowerDeck")
+        self.title.set_tooltip_markup(_help_markup(*STATUS_HELP["active"]))
+        header.set_title_widget(self.title)
         view.add_top_bar(header)
 
         split = Adw.NavigationSplitView()
@@ -76,7 +78,8 @@ class MainWindow(Adw.ApplicationWindow):
         grp = Adw.PreferencesGroup(title=_("Status"))
         self.rows = {}
         # CPU temperature lives only in "Monitor" (live), so it is not duplicated here.
-        for key in ("active", "battery", "conn", "mode", "wifips", "sessions"):
+        # the active profile is shown in the title bar and framed in the list, not repeated here
+        for key in ("battery", "conn", "mode", "wifips", "sessions"):
             r = Adw.ActionRow(title={"active": _("Active profile"), "battery": _("Battery"),
                                      "conn": _("Connection"),
                                      "mode": _("Power mode"), "wifips": _("Wi-Fi powersave"),
@@ -126,6 +129,22 @@ class MainWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=p.name, subtitle=GLib.markup_escape_text(_(p.description)))
             row.profile = p
             self.listbox.append(row)
+        self._mark_active()
+
+    def _mark_active(self):
+        """Title bar subtitle + framed tile for the profile PowerDeck applied last."""
+        active = engine.active_profile()
+        self.title.set_subtitle(_("Active profile: {}").format(active) if active
+                                else _("No profile activated"))
+        row = self.listbox.get_first_child()
+        while row is not None:
+            if row.profile.name == active:
+                row.add_css_class("pd-active")
+                row.set_tooltip_text(_("Active profile"))
+            else:
+                row.remove_css_class("pd-active")
+                row.set_tooltip_text(None)
+            row = row.get_next_sibling()
 
     def reload_profiles(self):
         self.profiles = load_profiles()
@@ -166,7 +185,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def refresh_status(self):
         s = read_status()
-        self.rows["active"].set_subtitle(engine.active_profile() or _("none"))
+        self._mark_active()
         bat = _("unknown") if s.battery_percent is None else f"{s.battery_percent} % ({s.battery_state})"
         self.rows["battery"].set_subtitle(bat)
         self.rows["conn"].set_subtitle(s.active_connection or _("unknown"))
@@ -288,6 +307,8 @@ class MainWindow(Adw.ApplicationWindow):
 COMPACT_CSS = """
 list.boxed-list > row.pd-compact, row.pd-compact { min-height: 0; padding-top: 0; padding-bottom: 0; }
 row.pd-compact > box.header { min-height: 0; padding-top: 2px; padding-bottom: 2px; }  /* + 6 px title padding = 8 px */
+/* active profile tile in the sidebar: accent frame, no layout shift */
+.navigation-sidebar > row.pd-active { box-shadow: inset 0 0 0 2px @accent_bg_color; }
 row.pd-compact button.pd-info { min-height: 24px; min-width: 24px; padding: 0; margin-top: -4px; margin-bottom: -4px; }
 """
 

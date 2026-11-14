@@ -2,6 +2,10 @@
 
 Linux workstation profiles for Ubuntu/GNOME. See [SPECIFICATION.md](SPECIFICATION.md).
 
+![PowerDeck: RemoteWork active (framed, shown in the title bar), Rucksack selected](docs/screenshot.png)
+
+*RemoteWork is the active profile (accent frame in the list and in the title bar), Rucksack is selected and its contents are shown. Rendered headless without sensors, so status values read “unknown”. Slovak UI: [docs/screenshot-sk.png](docs/screenshot-sk.png). Regenerate with `xvfb-run -a python3 scripts/screenshot.py docs/screenshot.png --active RemoteWork --select Rucksack`.*
+
 ## Status (v0.3 – untested on real hardware)
 
 Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mode, display timers/brightness/night light, Bluetooth and whitelisted user-service tasks; thermal/battery guard; GTK4 app with profile editor; CLI; `.deb` build. See [TODO.md](TODO.md) for what is left and the real-hardware checklist.
