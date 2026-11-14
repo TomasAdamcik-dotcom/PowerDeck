@@ -46,7 +46,7 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "status":
         from dataclasses import asdict
-        for k, v in asdict(read_status()).items():
+        for k, v in asdict(read_status(remote_login=True)).items():
             print(f"{k}: {v}")
         return 0
     if a.cmd == "monitor":

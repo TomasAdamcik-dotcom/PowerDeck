@@ -17,7 +17,7 @@ from .describe import describe  # noqa: E402
 from .logs import setup_logging  # noqa: E402
 from .profile import LID_ACTIONS, POWER_MODES, Profile, ProfileError, load_profiles, save_profile  # noqa: E402
 from .runner import system_runner  # noqa: E402
-from .status import read_status, thermal_level  # noqa: E402
+from .status import profile_thermal_level, read_status  # noqa: E402
 
 APP_ID = "io.github.powerdeck.PowerDeck"
 
@@ -167,8 +167,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _monitor_tick(self):
         s = self.monitor.sample()
         na = _("unknown")
+        level = profile_thermal_level(s.temp_c, self._find(engine.active_profile() or ""))
         self.mrows["temp"].set_subtitle(
-            na if s.temp_c is None else f"{s.temp_c:.0f} °C — {_(thermal_level(s.temp_c))}")
+            na if s.temp_c is None else f"{s.temp_c:.0f} °C — {_(level)}")
         self.mbars["temp"].set_value(max(0, min(100, s.temp_c or 0)))
         if s.freq_mhz is None:
             self.mrows["freq"].set_subtitle(na)

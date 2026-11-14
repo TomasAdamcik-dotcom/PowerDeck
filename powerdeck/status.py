@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import glob
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .runner import Runner, system_runner
+
+if TYPE_CHECKING:
+    from .profile import Profile
 
 CPU_ZONE_TYPES = ("x86_pkg_temp", "coretemp", "k10temp", "cpu", "cpu-thermal", "acpitz")
 
@@ -62,7 +66,9 @@ def _count_lines(out: str, rc: int) -> int:
     return len([l for l in out.splitlines() if l.strip()]) if rc == 0 else 0
 
 
-def read_status(run: Runner = system_runner) -> Status:
+def read_status(run: Runner = system_runner, remote_login: bool = False) -> Status:
+    """``remote_login`` also asks grdctl (another subprocess, may need polkit); only `powerdeck status`
+    shows it, the GUI and the guard do not."""
     pct, state = read_battery()
     rc, out = run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"])
     conn = None
@@ -77,7 +83,8 @@ def read_status(run: Runner = system_runner) -> Status:
     rdp = _count_lines(*reversed(run(["ss", "-Htn", "state", "established", "sport", "=", ":3389"])))
     sess = _count_lines(*reversed(run(["loginctl", "list-sessions", "--no-legend"])))
     return Status(pct, state, read_cpu_temp(), conn, pm if rc == 0 else None,
-                  ssh, rdp, sess, read_wifi_powersave(run), read_remote_login(run))
+                  ssh, rdp, sess, read_wifi_powersave(run),
+                  read_remote_login(run) if remote_login else None)
 
 
 def read_remote_login(run: Runner) -> str | None:
@@ -111,3 +118,11 @@ def thermal_level(temp: float | None, warn: float = 85, crit: float = 92) -> str
     if temp is None:
         return "unknown"
     return "critical" if temp >= crit else "warn" if temp >= warn else "ok"
+
+
+def profile_thermal_level(temp: float | None, profile: Profile | None) -> str:
+    """Level against the profile's thermal_guard limits, or the defaults if it has none."""
+    tg = profile.thermal_guard if profile is not None else None
+    if tg:
+        return thermal_level(temp, tg["warn_celsius"], tg["critical_celsius"])
+    return thermal_level(temp)
