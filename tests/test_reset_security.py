@@ -160,3 +160,35 @@ def test_system_pass_refuses_symlinked_backup_dir(tmp_path, monkeypatch):
     assert errs and "symbolic link" in errs[0]
     assert f.calls[n:] == []
     assert backends.HELPER_PATH == H
+
+
+def test_uninstall_script_never_imports_from_cwd_or_runs_backup_commands(tmp_path):
+    """scripts/uninstall-reset.sh runs Python as root: a planted powerdeck/ in the cwd must not load."""
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+    if not (shutil.which("sh") and shutil.which("awk")):
+        pytest.skip("needs sh and awk")
+    repo = Path(__file__).resolve().parent.parent
+    evil = tmp_path / "cwd"
+    (evil / "powerdeck").mkdir(parents=True)
+    planted = f"open({str(tmp_path / 'planted')!r}, 'w').close()\n"
+    (evil / "powerdeck" / "__init__.py").write_text(planted)
+    (evil / "json.py").write_text(planted)
+    home = tmp_path / "home"
+    backups = home / ".local" / "state" / "powerdeck" / "backups"
+    _write_backup(backups, "20250101-120000-X.json",
+                  [_change(["sh", "-c", f"touch {tmp_path / 'pwned'}"])])
+    (tmp_path / "passwd").write_text(f"pdtest:x:59999:59999::{home}:/bin/sh\n")
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONPATH": str(repo),
+           "POWERDECK_PYTHON": sys.executable, "POWERDECK_PASSWD": str(tmp_path / "passwd"),
+           "POWERDECK_HELPER": str(tmp_path / "no-helper"),
+           "HOME": str(tmp_path / "root"), "XDG_STATE_HOME": str(tmp_path / "state"),
+           "XDG_CONFIG_HOME": str(tmp_path / "config")}
+    r = subprocess.run(["sh", str(repo / "scripts" / "uninstall-reset.sh")], cwd=evil, env=env,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0
+    assert not (tmp_path / "planted").exists(), r.stdout + r.stderr
+    assert not (tmp_path / "pwned").exists()
+    assert "refused" in r.stdout, r.stdout + r.stderr

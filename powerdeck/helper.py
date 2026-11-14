@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -I
 """Privileged helper, installed as /usr/libexec/powerdeck-helper (root-owned)
 and run via ``pkexec /usr/libexec/powerdeck-helper …`` (see data/*.policy).
 

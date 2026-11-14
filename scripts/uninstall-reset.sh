@@ -7,7 +7,10 @@
 # 2. stop and disable the guard service;
 # 3. safety net: remove the lid drop-in, turbo on and no CPU frequency cap (kernel defaults).
 PY=${POWERDECK_PYTHON:-/usr/bin/python3}
+# Python runs as root here: never import from the current directory (a planted powerdeck/ or
+# json.py would run as root). `-P` keeps the cwd off sys.path, `cd /` makes sure of it.
 # (PYTHONPATH from the caller is kept, also for runuser, so a source checkout works too)
+cd / || exit 0
 HELPER=${POWERDECK_HELPER:-/usr/libexec/powerdeck-helper}
 PASSWD=${POWERDECK_PASSWD:-/etc/passwd}
 
@@ -19,15 +22,15 @@ getent_users | while IFS=: read -r user uid home; do
   echo "PowerDeck: restoring settings of $user"
   if ls "$backups"/*.json >/dev/null 2>&1; then
     # system part (root): pkexec is dropped, the helper runs directly
-    "$PY" -m powerdeck.cli reset-all --only system --no-mark --backups "$backups" || true
+    "$PY" -P -m powerdeck.cli reset-all --only system --no-mark --backups "$backups" || true
     # user part: gsettings need the user's D-Bus; use the running session or a private one
     if [ -S "/run/user/$uid/bus" ]; then
       runuser -u "$user" -- env HOME="$home" XDG_RUNTIME_DIR="/run/user/$uid" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
-        "$PY" -m powerdeck.cli reset-all --only user --backups "$backups" || true
+        "$PY" -P -m powerdeck.cli reset-all --only user --backups "$backups" || true
     else
       runuser -u "$user" -- env HOME="$home" dbus-run-session -- \
-        "$PY" -m powerdeck.cli reset-all --only user --backups "$backups" || true
+        "$PY" -P -m powerdeck.cli reset-all --only user --backups "$backups" || true
     fi
   fi
   # guard service: stop it in a running session, and remove the enable link in any case
