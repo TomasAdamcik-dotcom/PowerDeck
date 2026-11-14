@@ -1,7 +1,19 @@
 """A single planned system change, with its own revert command."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+# Backend names. They are stored in backup files, so their values must never change.
+GSETTINGS = "gsettings"
+LOGIND = "logind"
+NMCLI = "nmcli"
+POWER_PROFILES = "power-profiles"
+BRIGHTNESS = "brightnessctl"
+CPU = "cpu"
+RFKILL = "rfkill"
+TASK = "task"
+# Reverted as the user during uninstall (their dconf / their systemd); root reverts the rest.
+USER_BACKENDS = (GSETTINGS, TASK)
 
 
 @dataclass

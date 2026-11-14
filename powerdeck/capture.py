@@ -1,23 +1,23 @@
 """Capture the CURRENT system state as a profile (used to build a truthful 'Default')."""
 from __future__ import annotations
 
-from . import backends, cpu
-from .profile import Profile
+from . import backends, commands, cpu
+from .profile import POWER_MODES, Profile
 from .runner import Runner, system_runner
 
 
 def capture_current(run: Runner = system_runner, name: str = "Default") -> Profile:
     auto = {}
-    for src, key in (("battery", "sleep-inactive-battery-type"), ("ac", "sleep-inactive-ac-type")):
-        rc, out = run(["gsettings", "get", backends.PS, key])
+    for src, setting in commands.AUTO_SUSPEND.items():
+        rc, out = run(commands.gsettings_get(setting))
         if rc == 0:
             auto[src] = backends._unquote(out) != "nothing"
     rc, mode = run(["powerprofilesctl", "get"])
-    lid = backends.read_lid() or {k: "suspend" for k in backends.LID_ORDER}
+    lid = backends.read_lid() or {k: "suspend" for k in commands.LID_ORDER}
     p = Profile(name=name, description="Snapshot of your system settings.", lid=lid,
                 automatic_suspend=auto, wifi_powersave="default",
-                power_mode=mode.strip() if rc == 0 and mode.strip() in ("power-saver", "balanced", "performance") else None)
-    rc, out = run(["gsettings", "get", "org.gnome.desktop.screensaver", "lock-enabled"])
+                power_mode=mode.strip() if rc == 0 and mode.strip() in POWER_MODES else None)
+    rc, out = run(commands.gsettings_get(commands.LOCK_ENABLED))
     if rc == 0 and out.strip() in ("true", "false"):
         p.display["lock_screen"] = out.strip() == "true"
     t, m = cpu.read_turbo(), cpu.read_max_percent()

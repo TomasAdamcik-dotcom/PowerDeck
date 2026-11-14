@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from . import engine
+from . import commands, engine
 from .profile import Profile, load_profiles
 from .runner import Runner, system_runner
 from .i18n import _
@@ -21,8 +21,6 @@ from .status import read_status, thermal_level
 log = logging.getLogger(__name__)
 
 LOW_BATTERY_PERCENT = 15
-_SCREENSAVER = ["gdbus", "call", "--session", "--dest", "org.gnome.ScreenSaver",
-                "--object-path", "/org/gnome/ScreenSaver", "--method"]
 _RANK = {"unknown": 0, "ok": 0, "warn": 1, "critical": 2}
 
 
@@ -66,10 +64,10 @@ def dismiss_screensaver(run: Runner = system_runner) -> bool:
     While it is active GNOME Shell inhibits remote desktop: running RDP sessions are
     closed and new ones refused ("Session creation inhibited").
     """
-    rc, out = run(_SCREENSAVER + ["org.gnome.ScreenSaver.GetActive"])
+    rc, out = run(commands.screensaver("GetActive"))
     if rc != 0 or "true" not in out:
         return False
-    run(_SCREENSAVER + ["org.gnome.ScreenSaver.SetActive", "false"])
+    run(commands.screensaver("SetActive", "false"))
     log.info("screensaver dismissed to keep remote desktop reachable")
     return True
 
