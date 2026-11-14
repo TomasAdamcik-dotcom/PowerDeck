@@ -38,6 +38,16 @@ python3 -m powerdeck.cli list       # CLI: list | status | plan NAME | apply NAM
 pytest                              # tests (fake system, no root needed)
 ```
 
+## Develop in a container (no admin password)
+
+```bash
+scripts/dev-container.sh build   # once: Ubuntu 26.04 image with GTK, polkit, gsettings schemas
+scripts/dev-container.sh all     # pytest, .deb build/install/remove, headless GUI screenshot (dist/)
+scripts/dev-container.sh shell   # root shell inside the container
+```
+
+Rootless podman: the repository is mounted read-only, `/sys` is read-only and there is no network, so nothing on the host changes. The container cannot test what needs a real GNOME session or hardware (lid, screensaver/RDP, CPU limits, thermal, battery) – use a VM or the laptop for that.
+
 ## Remote desktop with the lid closed
 
 GNOME activates its screensaver when the lid closes (it does so instead of suspending, e.g. while an app such as Claude Desktop blocks suspend), and an active screensaver – locked or not – closes all **desktop sharing** RDP sessions and refuses new ones. Two ways around it:

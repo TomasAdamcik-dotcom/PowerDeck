@@ -72,6 +72,12 @@ def test_helper_reports_unsupported(tmp_path):
     assert helper.main(["set-cpu-max-percent", "50"], cpu_root=str(tmp_path)) == 3
 
 
+def test_helper_turbo_write_error_is_reported(tmp_path, capsys):
+    (tmp_path / "intel_pstate" / "no_turbo").mkdir(parents=True)   # a directory: open(..., "w") fails
+    assert helper.main(["set-cpu-turbo", "off"], cpu_root=str(tmp_path)) == 1
+    assert "no_turbo" in capsys.readouterr().err
+
+
 def test_plan_rucksack_cpu(fake_cpu):
     plan = engine.make_plan(BY["Rucksack"], lambda a: (127, ""))
     cpu_changes = [c for c in plan.changes if c.backend == "cpu"]

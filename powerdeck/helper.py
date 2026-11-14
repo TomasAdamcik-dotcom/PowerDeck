@@ -39,8 +39,12 @@ def set_turbo(on: bool, root: str = CPU_ROOT) -> int:
     for path, val in ((f"{root}/intel_pstate/no_turbo", "0" if on else "1"),
                       (f"{root}/cpufreq/boost", "1" if on else "0")):
         if os.path.exists(path):
-            with open(path, "w") as f:
-                f.write(val)
+            try:
+                with open(path, "w") as f:
+                    f.write(val)
+            except OSError as e:  # e.g. read-only /sys in a container
+                print(f"{path}: {e}", file=sys.stderr)
+                return 1
             return 0
     print("turbo control not available on this CPU", file=sys.stderr)
     return 3
