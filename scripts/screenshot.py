@@ -49,11 +49,14 @@ def select():
 def snap(w):
     snapshot = Gtk.Snapshot()
     Gtk.WidgetPaintable.new(w).snapshot(snapshot, w.get_width(), w.get_height())
-    w.get_native().get_renderer().render_texture(snapshot.to_node(), None).save_to_png(a.out)
-    print("saved", a.out)
+    global failed
+    failed = not w.get_native().get_renderer().render_texture(snapshot.to_node(), None).save_to_png(a.out)
+    print("could not write" if failed else "saved", a.out, file=sys.stderr if failed else sys.stdout)
     app.quit()
     return False
 
 
+failed = True  # until a PNG is written
 GLib.timeout_add(800, select)
 app.run([])
+sys.exit(1 if failed else 0)

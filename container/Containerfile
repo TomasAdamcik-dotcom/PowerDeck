@@ -1,0 +1,18 @@
+# PowerDeck development container: tests, .deb build/install and a headless GUI smoke test
+# without touching the host and without any admin password (rootless podman).
+# Built and used by scripts/dev-container.sh.
+FROM docker.io/library/ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# python3-gi/gtk/adw: GUI; xvfb + dbus: headless GUI smoke test; gsettings schemas: the keys
+# profiles change; polkitd/pkexec: policy validation; dpkg-dev: build-deb.sh
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pytest python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 \
+        xvfb xauth dbus dbus-x11 libglib2.0-bin dconf-gsettings-backend \
+        gsettings-desktop-schemas gnome-settings-daemon-common \
+        polkitd pkexec network-manager libnotify-bin dpkg-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# unprivileged user for the test run (tests must not need root)
+RUN useradd -m -s /bin/bash dev
+WORKDIR /src
