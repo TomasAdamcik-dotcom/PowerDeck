@@ -194,3 +194,40 @@ def test_thermal_suspend_policy_matches_guard_and_is_minimal():
     script = (base / "data" / "powerdeck-suspend").read_text()
     cmds = [l for l in script.splitlines() if l.strip() and not l.startswith("#")]
     assert cmds == ["exec /usr/bin/systemctl suspend --ignore-inhibitors"]   # nothing else, no args
+
+
+def test_backups_same_second_undo_newest_first(tmp_path, monkeypatch):
+    """Two applies within one clock tick: restore must undo the second one first."""
+    sysm, b, active = FakeSystem(), tmp_path / "b", tmp_path / "active.json"
+    monkeypatch.setattr(engine.time, "time_ns", lambda: 1_700_000_000_000_000_000)
+    assert engine.apply_plan(engine.make_plan(Profile(name="B", power_mode="performance"), sysm),
+                             sysm, b, active) == []
+    assert engine.apply_plan(engine.make_plan(Profile(name="A", power_mode="power-saver"), sysm),
+                             sysm, b, active) == []
+    assert engine.restore_last(sysm, b, active) == []
+    assert sysm.mode == "performance" and engine.active_profile(active) == "B"
+    assert engine.restore_last(sysm, b, active) == []
+    assert sysm.mode == "balanced"
+
+
+def test_old_backup_names_still_read_in_order(tmp_path):
+    """Backups written by PowerDeck <= 0.3 ("<stamp>[-<n>]-<profile>.json") keep working."""
+    sysm, b = FakeSystem(), tmp_path / "b"
+    b.mkdir()
+
+    def backup(name, old, new):
+        ch = {"backend": "power-profiles", "target": "Power mode", "old": old, "new": new,
+              "apply_argv": ["powerprofilesctl", "set", new],
+              "revert_argv": ["powerprofilesctl", "set", old], "privileged": False}
+        (b / name).write_text(json.dumps({"profile": name, "previous": None, "changes": [ch]}))
+
+    # applied in this order: m1 (balanced → power-saver) ... m4; newest must be undone first
+    backup("20250101-120000-Zed.json", "balanced", "power-saver")
+    backup("20250101-120000-1-Alpha.json", "power-saver", "performance")
+    backup("20250101-120000-2-Beta.json", "performance", "power-saver")
+    backup("01700000000000000000-New.json", "power-saver", "performance")
+    sysm.mode = "performance"
+    assert engine.reset_all(sysm, b, active_file=tmp_path / "a.json") == []
+    sets = [c[2] for c in sysm.calls if c[:2] == ["powerprofilesctl", "set"]]
+    assert sets == ["power-saver", "performance", "power-saver", "balanced"]
+    assert sysm.mode == "balanced"

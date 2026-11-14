@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import stat
 import time
@@ -49,8 +50,40 @@ def make_plan(p: Profile, run: Runner = system_runner, previous: Profile | None 
     return Plan(p.name, changes)
 
 
+# Backup file names: "<time_ns, 20 digits>-<profile>.json". PowerDeck <= 0.3 wrote
+# "<YYYYmmdd-HHMMSS>-<profile>.json", then "<YYYYmmdd-HHMMSS>-<n>-<profile>.json" for further
+# applies within the same second; those are all older than any file in the new format.
+_NAME_NS_RE = re.compile(r"([0-9]{20})-")
+_NAME_OLD_RE = re.compile(r"([0-9]{8}-[0-9]{6})-(?:([0-9]+)-)?")
+
+
+def _backup_key(f: Path) -> tuple:
+    """Sort key, oldest first. (An old name of a profile called e.g. "2-Days" reads as counter 2;
+    that only matters for two applies within one second.)"""
+    if m := _NAME_NS_RE.match(f.name):
+        return (2, int(m[1]), f.name)
+    if m := _NAME_OLD_RE.match(f.name):
+        return (1, m[1], int(m[2] or 0), f.name)
+    return (0, f.name)
+
+
+def _backup_files(directory: Path) -> list[Path]:
+    """Pending backups (not yet restored), oldest first."""
+    files = directory.glob("*.json") if directory.is_dir() else []
+    return sorted(files, key=_backup_key)
+
+
+def _new_backup_file(directory: Path, profile: str) -> Path:
+    """A name that sorts after every pending backup, even if the clock did not advance."""
+    ns = time.time_ns()
+    files = _backup_files(directory)
+    if files and (last := _backup_key(files[-1]))[0] == 2:
+        ns = max(ns, last[1] + 1)
+    return directory / f"{ns:020d}-{profile}.json"
+
+
 def _last_backup_file(directory: Path) -> Path | None:
-    files = sorted(directory.glob("*.json")) if directory.is_dir() else []
+    files = _backup_files(directory)
     return files[-1] if files else None
 
 
@@ -63,15 +96,10 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
     """
     backup_dir = backup_dir or paths.backups_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
     if plan.needs_admin and not backends.helper_installed():
         return [f"Admin helper not installed ({backends.HELPER_PATH}). "
                 "Run: sudo scripts/install-helper.sh"]
-    snap = backup_dir / f"{stamp}-{plan.profile}.json"
-    n = 1
-    while snap.exists():  # two applies within the same second
-        snap = backup_dir / f"{stamp}-{n}-{plan.profile}.json"
-        n += 1
+    snap = _new_backup_file(backup_dir, plan.profile)
     snap.write_text(json.dumps({"profile": plan.profile, "previous": active_profile(active_file),
                                 "changes": [c.to_dict() for c in plan.changes]}, indent=2))
     done: list[Change] = []
@@ -178,7 +206,7 @@ def reset_all(run: Runner = system_runner, backup_dir: Path | None = None, only:
         if link is not None:
             log.error("reset: refusing backups below symlink %s", link)
             return [f"{_printable(str(link))}: symbolic link, refused"]
-    files = sorted(backup_dir.glob("*.json"), reverse=True) if backup_dir.is_dir() else []
+    files = _backup_files(backup_dir)[::-1]  # newest first
     errors: list[str] = []
     for f in files:
         try:
