@@ -23,4 +23,12 @@ class Change:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Change":
-        return cls(**d)
+        """Rebuild a change from a backup file; raises ValueError if it is malformed."""
+        try:
+            c = cls(**d)
+        except TypeError as e:
+            raise ValueError(f"malformed change: {e}") from None
+        for argv in (c.apply_argv, c.revert_argv):
+            if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+                raise ValueError(f"malformed command in change {c.target!r}")
+        return c

@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import stat
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import logging
 
-from . import backends, paths
+from . import backends, commands, paths
 from .changes import Change
 from .profile import Profile
 from .runner import Runner, system_runner
@@ -125,38 +128,86 @@ def restore_last(run: Runner = system_runner, backup_dir: Path | None = None,
 USER_BACKENDS = ("gsettings", "task")
 
 
+def _symlinked_dir(directory: Path) -> Path | None:
+    """The first component of ``directory`` that is a symlink a non-root user could have planted."""
+    for d in (directory, *directory.absolute().parents):
+        try:
+            st = os.lstat(d)
+        except OSError:
+            continue
+        if stat.S_ISLNK(st.st_mode) and st.st_uid != 0:
+            return d
+    return None
+
+
+def _read_backup(f: Path) -> list[Change]:
+    """The changes recorded in one backup file. Symlinks and malformed files raise ValueError/OSError."""
+    if f.is_symlink():
+        raise ValueError("symbolic link, refused")
+    fd = os.open(f, os.O_RDONLY | os.O_NOFOLLOW)  # no symlink swapped in after the check
+    with os.fdopen(fd, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not isinstance(data.get("changes", []), list):
+        raise ValueError("not a PowerDeck backup")
+    changes = []
+    for d in data.get("changes", []):
+        if not isinstance(d, dict):
+            raise ValueError("malformed change")
+        changes.append(Change.from_dict(d))
+    return changes
+
+
+def _printable(s: str) -> str:
+    # target names and commands come from user-writable files; keep terminal escapes out of logs
+    return "".join(ch if ch.isprintable() else "?" for ch in s)
+
+
 def reset_all(run: Runner = system_runner, backup_dir: Path | None = None, only: str | None = None,
               mark_restored: bool = True, active_file: Path | None = None) -> list[str]:
     """Undo EVERY applied profile (newest first) → settings as they were before PowerDeck.
 
     ``only="user"`` reverts just gsettings/tasks (run as the user), ``only="system"`` everything
     else and calls the root helper directly instead of via pkexec (run as root while
-    uninstalling). Errors are collected; the remaining reverts still run.
+    uninstalling). The system pass runs only commands that ``commands.allowed_as_root``
+    accepts and refuses symlinked backup files and directories, because the backups live in
+    the user's home. Errors are collected; the remaining reverts still run.
     """
     backup_dir = backup_dir or paths.backups_dir()
+    if only == "system":
+        link = _symlinked_dir(backup_dir)
+        if link is not None:
+            log.error("reset: refusing backups below symlink %s", link)
+            return [f"{_printable(str(link))}: symbolic link, refused"]
     files = sorted(backup_dir.glob("*.json"), reverse=True) if backup_dir.is_dir() else []
     errors: list[str] = []
     for f in files:
         try:
-            data = json.loads(f.read_text())
+            changes = _read_backup(f)
         except (OSError, ValueError) as e:
-            errors.append(f"{f.name}: {e}")
+            errors.append(_printable(f"{f.name}: {e}"))
             continue
-        for d in reversed(data.get("changes", [])):
-            c = Change.from_dict(d)
+        for c in reversed(changes):
             if not c.revert_argv:
                 continue
             is_user = c.backend in USER_BACKENDS
             if (only == "user" and not is_user) or (only == "system" and is_user):
                 continue
-            argv = c.revert_argv[1:] if only == "system" and c.revert_argv[0] == "pkexec" else c.revert_argv
+            argv = c.revert_argv
+            if only == "system":
+                argv = commands.without_pkexec(argv)
+                if not commands.allowed_as_root(argv):
+                    errors.append(_printable(f"{c.target}: not an allowed revert command, refused: "
+                                             + shlex.join(argv)))
+                    log.warning("reset: refused to run %r from %s as root", argv, f.name)
+                    continue
             rc, out = run(argv)
             if rc != 0:
-                errors.append(f"{c.target}: {out or 'failed'}")
+                errors.append(_printable(f"{c.target}: {out or 'failed'}"))
         log.info("reset: reverted %s (only=%s)", f.name, only or "all")
     if mark_restored:
         for f in files:
-            f.rename(f.with_suffix(".restored"))
+            if not f.is_symlink():
+                f.rename(f.with_suffix(".restored"))
         (active_file or paths.state_dir() / "active.json").unlink(missing_ok=True)
     return errors
 

@@ -6,6 +6,7 @@ import os
 from . import helper
 from . import cpu
 from .changes import Change
+from .commands import HELPER_PATH
 from .profile import Profile, parse_task
 from .runner import Runner
 
@@ -16,11 +17,6 @@ LID_ORDER = ("battery", "ac", "docked")
 
 def _unquote(s: str) -> str:
     return s.strip().strip("'")
-
-
-# Fixed, root-owned path matched by the polkit policy (data/*.policy).
-# Never fall back to running code from the user's own directories as root.
-HELPER_PATH = "/usr/libexec/powerdeck-helper"
 
 
 def helper_installed() -> bool:

@@ -72,19 +72,43 @@ def set_max_percent(pct: int, root: str = CPU_ROOT) -> int:
     return 1 if failed else 0
 
 
+USAGE = "usage: set-lid B AC D | remove-lid | set-cpu-turbo on|off | set-cpu-max-percent 10-100"
+
+
+def valid_args(argv: list[str]) -> bool:
+    """True if ``argv`` is one of the few commands this helper accepts (checked before anything runs).
+
+    Also used by ``powerdeck reset-all --only system`` (run as root while uninstalling) to vet
+    helper commands read from the user's backup files.
+    """
+    if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+        return False
+    if len(argv) == 2 and argv[0] == "set-cpu-turbo":
+        return argv[1] in ("on", "off")
+    if len(argv) == 2 and argv[0] == "set-cpu-max-percent":
+        return argv[1].isascii() and argv[1].isdigit() and 10 <= int(argv[1]) <= 100
+    if len(argv) == 1:
+        return argv[0] == "remove-lid"
+    if len(argv) == 4 and argv[0] == "set-lid":
+        return all(v in ACTIONS for v in argv[1:])
+    return False
+
+
 def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True,
          cpu_root: str = CPU_ROOT) -> int:
-    if len(argv) == 2 and argv[0] == "set-cpu-turbo" and argv[1] in ("on", "off"):
+    if not valid_args(argv):
+        print(USAGE, file=sys.stderr)
+        return 2
+    if argv[0] == "set-cpu-turbo":
         return set_turbo(argv[1] == "on", cpu_root)
-    if (len(argv) == 2 and argv[0] == "set-cpu-max-percent" and argv[1].isdigit()
-            and 10 <= int(argv[1]) <= 100):
+    if argv[0] == "set-cpu-max-percent":
         return set_max_percent(int(argv[1]), cpu_root)
-    if len(argv) == 1 and argv[0] == "remove-lid":
+    if argv[0] == "remove-lid":
         try:
             os.remove(os.path.join(dropin_dir, DROPIN))
         except FileNotFoundError:
             pass
-    elif len(argv) == 4 and argv[0] == "set-lid":
+    else:  # set-lid
         try:
             content = render(*argv[1:])
         except ValueError as e:
@@ -97,9 +121,6 @@ def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True,
         with os.fdopen(fd, "w") as f:
             f.write(content)
         os.replace(tmp, target)  # atomic: never leaves a half-written config
-    else:
-        print("usage: set-lid B AC D | remove-lid | set-cpu-turbo on|off | set-cpu-max-percent 10-100", file=sys.stderr)
-        return 2
     if reload:
         _reload_logind()
     return 0
