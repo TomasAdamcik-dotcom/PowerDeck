@@ -1,6 +1,11 @@
-"""GTK4 / libadwaita front-end. All logic lives in the engine; this only shows it."""
+"""GTK4 / libadwaita front-end. All logic lives in the engine; this only shows it.
+
+Anything that runs commands (status read, planning, applying) happens in a worker thread;
+results come back to the GTK main loop with GLib.idle_add.
+"""
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 
@@ -11,15 +16,51 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from . import backends, engine  # noqa: E402
-from .monitor import Monitor  # noqa: E402
+from .describe import Item, describe  # noqa: E402
+from .gtk_editor import ProfileEditor  # noqa: E402
+from .gui_texts import COMPACT_CSS, MONITOR_HELP, MONITOR_ROWS, STATUS_HELP, STATUS_ROWS  # noqa: E402
 from .i18n import _  # noqa: E402
-from .describe import describe  # noqa: E402
 from .logs import setup_logging  # noqa: E402
-from .profile import LID_ACTIONS, POWER_MODES, Profile, ProfileError, load_profiles, save_profile  # noqa: E402
-from .runner import system_runner  # noqa: E402
-from .status import profile_thermal_level, read_status  # noqa: E402
+from .monitor import Monitor  # noqa: E402
+from .profile import load_profiles  # noqa: E402
+from .status import Status, profile_thermal_level, read_status  # noqa: E402
 
 APP_ID = "io.github.powerdeck.PowerDeck"
+STATUS_INTERVAL_S = 10
+MONITOR_INTERVAL_S = 2
+
+log = logging.getLogger("powerdeck")
+
+
+def _help_markup(text: str, command: str) -> str:
+    """Tooltip: what a value means, then the command it comes from."""
+    return (GLib.markup_escape_text(_(text)) + "\n\n" + GLib.markup_escape_text(_("Source:"))
+            + "\n<tt>" + GLib.markup_escape_text(command) + "</tt>")
+
+
+def _in_background(work, done, failed=None) -> None:
+    """Run ``work()`` in a worker thread, then ``done(result)`` (or ``failed(exc)``) on the main loop."""
+    def call(fn, arg):
+        fn(arg)
+        return False  # run once
+
+    def target():
+        try:
+            result = work()
+        except Exception as e:  # never lose the error in a dead thread
+            log.exception("background task failed")
+            if failed is not None:
+                GLib.idle_add(call, failed, e)
+            return
+        GLib.idle_add(call, done, result)
+    threading.Thread(target=target, daemon=True).start()
+
+
+def _rows(listbox: Gtk.ListBox):
+    row = listbox.get_first_child()
+    while row is not None:
+        yield row
+        row = row.get_next_sibling()
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -27,18 +68,31 @@ class MainWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title="PowerDeck", default_width=900, default_height=620)
         self.profiles = load_profiles()
         self.selected = None
+        self.active_name: str | None = None
+        self._status_pending = False
+        self._planning = False
 
-        self.toasts = Adw.ToastOverlay()
-        view = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        # title bar: "PowerDeck" + the active profile (or "No profile activated")
+        split = Adw.NavigationSplitView()
+        split.set_sidebar(self._build_sidebar(header))
+        split.set_content(Adw.NavigationPage(title="PowerDeck", child=self._build_content()))
+        self.toasts = Adw.ToastOverlay(child=split)
+        view = Adw.ToolbarView()
+        view.add_top_bar(header)
+        view.set_content(self.toasts)
+        self.set_content(view)
+
+        self.refresh_status()
+        self._select_active()
+        GLib.timeout_add_seconds(STATUS_INTERVAL_S, self._tick)
+        GLib.timeout_add_seconds(MONITOR_INTERVAL_S, self._monitor_tick)
+
+    # -- layout ---------------------------------------------------------------
+    def _build_sidebar(self, header: Adw.HeaderBar) -> Adw.NavigationPage:
+        """Title bar (active profile, new/edit buttons) and the profile list."""
         self.title = Adw.WindowTitle(title="PowerDeck")
         self.title.set_tooltip_markup(_help_markup(*STATUS_HELP["active"]))
         header.set_title_widget(self.title)
-        view.add_top_bar(header)
-
-        split = Adw.NavigationSplitView()
-        # -- sidebar: profile list
         self.listbox = Gtk.ListBox(css_classes=["navigation-sidebar"])
         self.listbox.connect("row-selected", self._on_select)
         self._fill_list()
@@ -48,24 +102,27 @@ class MainWindow(Adw.ApplicationWindow):
         self.edit_btn.connect("clicked", lambda *_a: self._edit(self.selected))
         header.pack_start(new_btn)
         header.pack_start(self.edit_btn)
-        side_page = Adw.NavigationPage(title=_("Profiles"),
-                                       child=Gtk.ScrolledWindow(child=self.listbox))
-        split.set_sidebar(side_page)
+        return Adw.NavigationPage(title=_("Profiles"), child=Gtk.ScrolledWindow(child=self.listbox))
 
-        # -- content (top to bottom): profile contents, actions, status, monitor
+    def _build_content(self) -> Adw.PreferencesPage:
+        """Top to bottom: profile contents, actions, status, monitor."""
         content = Adw.PreferencesPage()
-        # -- profile contents (first block): summary + bullets with command tooltips
         self.info_group = Adw.PreferencesGroup(title=_("Profile contents"),
                                                description=_("Select a profile on the left to see what it changes."))
         self.info_rows = []
         content.add(self.info_group)
+        content.add(self._build_actions())
+        content.add(self._build_status_group())
+        content.add(self._build_monitor_group())
+        return content
 
-        # -- actions right under the profile description
+    def _build_actions(self) -> Adw.PreferencesGroup:
+        """Buttons right under the profile description."""
         actions = Adw.PreferencesGroup()
         box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=6)
         self.apply_btn = Gtk.Button(label=_("Apply…"), css_classes=["suggested-action", "pill"],
                                     sensitive=False)
-        self.apply_btn.connect("clicked", self._on_apply_clicked)
+        self.apply_btn.connect("clicked", lambda *_a: self._confirm(self.selected))
         remote = Gtk.Button(label=_("Enable Remote Work"), css_classes=["pill"])
         remote.connect("clicked", lambda *_a: self._confirm(self._find("RemoteWork")))
         restore = Gtk.Button(label=_("Restore previous"), css_classes=["pill"])
@@ -73,58 +130,42 @@ class MainWindow(Adw.ApplicationWindow):
         for b in (self.apply_btn, remote, restore):
             box.append(b)
         actions.add(box)
-        content.add(actions)
+        return actions
 
+    @staticmethod
+    def _property_row(title: str, help_: tuple[str, str]) -> Adw.ActionRow:
+        row = Adw.ActionRow(title=_(title))
+        row.add_css_class("property")
+        row.set_tooltip_markup(_help_markup(*help_))
+        return row
+
+    def _build_status_group(self) -> Adw.PreferencesGroup:
         grp = Adw.PreferencesGroup(title=_("Status"))
         self.rows = {}
-        # CPU temperature lives only in "Monitor" (live), so it is not duplicated here.
-        # the active profile is shown in the title bar and framed in the list, not repeated here
-        for key in ("battery", "conn", "mode", "wifips", "sessions"):
-            r = Adw.ActionRow(title={"active": _("Active profile"), "battery": _("Battery"),
-                                     "conn": _("Connection"),
-                                     "mode": _("Power mode"), "wifips": _("Wi-Fi powersave"),
-                                     "sessions": _("Sessions")}[key])
-            r.add_css_class("property")
-            r.set_tooltip_markup(_help_markup(*STATUS_HELP[key]))
-            self.rows[key] = r
-            grp.add(r)
-        content.add(grp)
+        for key, title in STATUS_ROWS:
+            self.rows[key] = self._property_row(title, STATUS_HELP[key])
+            grp.add(self.rows[key])
+        return grp
 
-        # -- live monitor (sysfs only, refreshed every 2 s)
-        mgrp = Adw.PreferencesGroup(title=_("Monitor"))
+    def _build_monitor_group(self) -> Adw.PreferencesGroup:
+        """Live monitor (sysfs only, cheap enough for the main loop)."""
+        grp = Adw.PreferencesGroup(title=_("Monitor"))
         self.monitor = Monitor()
         self.mrows, self.mbars = {}, {}
-        for key, title, bar in (("temp", _("CPU temperature"), True), ("freq", _("CPU frequency"), True),
-                                ("load", _("CPU load"), True), ("power", _("Power draw"), False),
-                                ("fan", _("Fan"), False)):
-            r = Adw.ActionRow(title=title)
-            r.add_css_class("property")
-            r.set_tooltip_markup(_help_markup(*MONITOR_HELP[key]))
+        for key, title, bar in MONITOR_ROWS:
+            row = self._property_row(title, MONITOR_HELP[key])
             if bar:
-                lb = Gtk.LevelBar(min_value=0, max_value=100, valign=Gtk.Align.CENTER, width_request=120)
-                r.add_suffix(lb)
-                self.mbars[key] = lb
-            self.mrows[key] = r
-            mgrp.add(r)
-        content.add(mgrp)
+                self.mbars[key] = Gtk.LevelBar(min_value=0, max_value=100, valign=Gtk.Align.CENTER,
+                                               width_request=120)
+                row.add_suffix(self.mbars[key])
+            self.mrows[key] = row
+            grp.add(row)
+        return grp
 
-        split.set_content(Adw.NavigationPage(title="PowerDeck", child=content))
-
-        self.toasts.set_child(split)
-        view.set_content(self.toasts)
-        self.set_content(view)
-        self.refresh_status()
-        self._select_active()
-        GLib.timeout_add_seconds(10, self._tick)
-        GLib.timeout_add_seconds(2, self._monitor_tick)
-
-    # -- helpers
+    # -- profile list -----------------------------------------------------------
     def _fill_list(self):
-        child = self.listbox.get_first_child()
-        while child is not None:
-            nxt = child.get_next_sibling()
+        while (child := self.listbox.get_first_child()) is not None:
             self.listbox.remove(child)
-            child = nxt
         for p in self.profiles:
             row = Adw.ActionRow(title=p.name, subtitle=GLib.markup_escape_text(_(p.description)))
             row.profile = p
@@ -133,18 +174,23 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _mark_active(self):
         """Title bar subtitle + framed tile for the profile PowerDeck applied last."""
-        active = engine.active_profile()
+        self.active_name = active = engine.active_profile()
         self.title.set_subtitle(_("Active profile: {}").format(active) if active
                                 else _("No profile activated"))
-        row = self.listbox.get_first_child()
-        while row is not None:
+        for row in _rows(self.listbox):
             if row.profile.name == active:
                 row.add_css_class("pd-active")
                 row.set_tooltip_text(_("Active profile"))
             else:
                 row.remove_css_class("pd-active")
                 row.set_tooltip_text(None)
-            row = row.get_next_sibling()
+
+    def _select_active(self):
+        active = engine.active_profile()
+        for row in _rows(self.listbox):
+            if row.profile.name == active:
+                self.listbox.select_row(row)
+                return
 
     def reload_profiles(self):
         self.profiles = load_profiles()
@@ -160,49 +206,16 @@ class MainWindow(Adw.ApplicationWindow):
     def _find(self, name):
         return next((p for p in self.profiles if p.name == name), None)
 
-    def _tick(self):
-        self.refresh_status()
-        return True
+    def _on_select(self, _lb, row):
+        self.selected = row.profile if row else None
+        self._show_profile(self.selected)
+        self.apply_btn.set_sensitive(self.selected is not None)
+        self.edit_btn.set_sensitive(self.selected is not None)
 
-    def _monitor_tick(self):
-        s = self.monitor.sample()
-        na = _("unknown")
-        level = profile_thermal_level(s.temp_c, self._find(engine.active_profile() or ""))
-        self.mrows["temp"].set_subtitle(
-            na if s.temp_c is None else f"{s.temp_c:.0f} °C — {_(level)}")
-        self.mbars["temp"].set_value(max(0, min(100, s.temp_c or 0)))
-        if s.freq_mhz is None:
-            self.mrows["freq"].set_subtitle(na)
-        else:
-            lim = f" · {_('limit')} {s.limit_percent} %" if s.limit_percent else ""
-            turbo = "" if s.turbo is None else f" · turbo {'on' if s.turbo else 'off'}"
-            self.mrows["freq"].set_subtitle(f"{s.freq_mhz:.0f} MHz ({s.freq_percent:.0f} %){lim}{turbo}")
-        self.mbars["freq"].set_value(s.freq_percent or 0)
-        self.mrows["load"].set_subtitle(na if s.load_percent is None else f"{s.load_percent:.0f} %")
-        self.mbars["load"].set_value(s.load_percent or 0)
-        self.mrows["power"].set_subtitle(na if s.power_w is None else f"{s.power_w:+.1f} W")
-        self.mrows["fan"].set_subtitle(na if s.fan_rpm is None else f"{s.fan_rpm} rpm")
-        return True
-
-    def refresh_status(self):
-        s = read_status()
-        self._mark_active()
-        bat = _("unknown") if s.battery_percent is None else f"{s.battery_percent} % ({s.battery_state})"
-        self.rows["battery"].set_subtitle(bat)
-        self.rows["conn"].set_subtitle(s.active_connection or _("unknown"))
-        self.rows["mode"].set_subtitle(s.power_mode or _("unknown"))
-        self.rows["wifips"].set_subtitle(s.wifi_powersave or _("unknown"))
-        self.rows["sessions"].set_subtitle(
-            f"SSH: {s.ssh_connections} · RDP: {s.rdp_connections} · {_('Login sessions')}: {s.login_sessions}")
-
-    def _select_active(self):
-        active = engine.active_profile()
-        row = self.listbox.get_first_child()
-        while row is not None:
-            if row.profile.name == active:
-                self.listbox.select_row(row)
-                return
-            row = row.get_next_sibling()
+    # -- profile contents -------------------------------------------------------
+    def _add_info_row(self, row: Adw.ActionRow):
+        self.info_group.add(row)
+        self.info_rows.append(row)
 
     def _show_profile(self, profile):
         """Fill the top block: short description, then bullets; the info icon shows the command."""
@@ -217,49 +230,98 @@ class MainWindow(Adw.ApplicationWindow):
         self.info_group.set_title(profile.name)
         self.info_group.set_description(GLib.markup_escape_text(desc.summary))
         for it in desc.items:
-            row = Adw.ActionRow(title=GLib.markup_escape_text(("⚠ " if it.warning else "• ") + it.text))
-            row.set_title_lines(0)
-            row.add_css_class("pd-compact")
-            if it.commands:
-                btn = Gtk.Button(icon_name="dialog-information-symbolic", valign=Gtk.Align.CENTER,
-                                 css_classes=["flat", "circular", "pd-info"], tooltip_text=_("Show command"))
-                text = it.command_text()
-                markup = "<tt>" + GLib.markup_escape_text(text) + "</tt>"
-                if it.note:
-                    markup += "\n\n" + GLib.markup_escape_text(it.note)
-                btn.set_tooltip_markup(markup)
-                btn.connect("clicked", self._copy_command, text)
-                row.add_suffix(btn)
-            self.info_group.add(row)
-            self.info_rows.append(row)
+            self._add_info_row(self._bullet_row(it))
         if any(i.warning for i in desc.items) and profile.thermal_guard:
             warn = Adw.ActionRow(title="⚠ " + _("Overheating risk – do not keep the laptop closed in a bag for long."))
             warn.set_title_lines(0)
             warn.add_css_class("pd-compact")
-            self.info_group.add(warn)
-            self.info_rows.append(warn)
+            self._add_info_row(warn)
+
+    def _bullet_row(self, it: Item) -> Adw.ActionRow:
+        """Compact bullet row; its info icon shows the command (and a note) and copies it on click."""
+        row = Adw.ActionRow(title=GLib.markup_escape_text(("⚠ " if it.warning else "• ") + it.text))
+        row.set_title_lines(0)
+        row.add_css_class("pd-compact")
+        if it.commands:
+            text = it.command_text()
+            markup = "<tt>" + GLib.markup_escape_text(text) + "</tt>"
+            if it.note:
+                markup += "\n\n" + GLib.markup_escape_text(it.note)
+            btn = Gtk.Button(icon_name="dialog-information-symbolic", valign=Gtk.Align.CENTER,
+                             css_classes=["flat", "circular", "pd-info"], tooltip_text=_("Show command"))
+            btn.set_tooltip_markup(markup)
+            btn.connect("clicked", self._copy_command, text)
+            row.add_suffix(btn)
+        return row
 
     def _copy_command(self, _btn, text):
         Gdk.Display.get_default().get_clipboard().set(text)
         self.toast(_("Copied to clipboard."))
 
-    def _on_select(self, _lb, row):
-        self.selected = row.profile if row else None
-        self._show_profile(self.selected)
-        self.apply_btn.set_sensitive(self.selected is not None)
-        self.edit_btn.set_sensitive(self.selected is not None)
+    # -- status and monitor -----------------------------------------------------
+    def _tick(self):
+        self.refresh_status()
+        return True
 
-    def _on_apply_clicked(self, *_a):
-        self._confirm(self.selected)
-
-    def toast(self, msg):
-        self.toasts.add_toast(Adw.Toast(title=msg))
-
-    # -- apply flow: show exact diff, ask, then run off the UI thread
-    def _confirm(self, profile):
-        if profile is None:
+    def refresh_status(self):
+        """Active profile now; the status rows once read_status (subprocesses) is done."""
+        self._mark_active()
+        if self._status_pending:
             return
-        plan = engine.make_plan(profile, previous=self._find(engine.active_profile() or ""))
+        self._status_pending = True
+        _in_background(read_status, self._show_status, lambda _e: self._show_status(None))
+
+    def _show_status(self, s: Status | None):
+        self._status_pending = False
+        if s is None:
+            return
+        na = _("unknown")
+        self.rows["battery"].set_subtitle(
+            na if s.battery_percent is None else f"{s.battery_percent} % ({s.battery_state})")
+        self.rows["conn"].set_subtitle(s.active_connection or na)
+        self.rows["mode"].set_subtitle(s.power_mode or na)
+        self.rows["wifips"].set_subtitle(s.wifi_powersave or na)
+        self.rows["sessions"].set_subtitle(
+            f"SSH: {s.ssh_connections} · RDP: {s.rdp_connections} · {_('Login sessions')}: {s.login_sessions}")
+
+    def _set_monitor(self, key: str, text: str, bar: float | None = None):
+        self.mrows[key].set_subtitle(text)
+        if key in self.mbars:
+            self.mbars[key].set_value(max(0, min(100, bar or 0)))
+
+    def _monitor_tick(self):
+        s = self.monitor.sample()
+        na = _("unknown")
+        # thermal level against the active profile's limits (defaults without a thermal guard)
+        level = profile_thermal_level(s.temp_c, self._find(self.active_name or ""))
+        self._set_monitor("temp", na if s.temp_c is None else f"{s.temp_c:.0f} °C — {_(level)}", s.temp_c)
+        if s.freq_mhz is None:
+            freq = na
+        else:
+            lim = f" · {_('limit')} {s.limit_percent} %" if s.limit_percent else ""
+            turbo = "" if s.turbo is None else f" · turbo {'on' if s.turbo else 'off'}"
+            freq = f"{s.freq_mhz:.0f} MHz ({s.freq_percent:.0f} %){lim}{turbo}"
+        self._set_monitor("freq", freq, s.freq_percent)
+        self._set_monitor("load", na if s.load_percent is None else f"{s.load_percent:.0f} %", s.load_percent)
+        self._set_monitor("power", na if s.power_w is None else f"{s.power_w:+.1f} W")
+        self._set_monitor("fan", na if s.fan_rpm is None else f"{s.fan_rpm} rpm")
+        return True
+
+    # -- apply flow: plan off the UI thread, show the exact diff, ask, apply off the UI thread
+    def _confirm(self, profile):
+        if profile is None or self._planning:
+            return
+        self._planning = True
+        previous = self._find(engine.active_profile() or "")
+        _in_background(lambda: engine.make_plan(profile, previous=previous),
+                       lambda plan: self._ask_apply(profile, plan), self._planning_failed)
+
+    def _planning_failed(self, exc: Exception):
+        self._planning = False
+        self.error(_("Something went wrong"), str(exc))
+
+    def _ask_apply(self, profile, plan: engine.Plan):
+        self._planning = False
         if plan.needs_admin and not backends.helper_installed():
             self.error(_("Admin helper is not installed."),
                        _("Install it once with:") + "\n\nsudo scripts/install-helper.sh")
@@ -272,28 +334,21 @@ class MainWindow(Adw.ApplicationWindow):
             body += "\n\n" + _("Administrator permission will be requested.")
         if profile.thermal_guard:
             body += "\n\n⚠ " + _("Overheating risk: do not keep the laptop in a closed bag for long.")
-        dlg = Adw.MessageDialog(transient_for=self, heading=_("Apply profile “{}”?").format(profile.name),
-                                body=body)
+        dlg = Adw.AlertDialog(heading=_("Apply profile “{}”?").format(profile.name), body=body)
         dlg.add_response("cancel", _("Cancel"))
         dlg.add_response("apply", _("Apply"))
         dlg.set_response_appearance("apply", Adw.ResponseAppearance.SUGGESTED)
-        dlg.connect("response", lambda d, r: r == "apply" and self._run(
+        dlg.set_close_response("cancel")
+        dlg.connect("response", lambda _d, r: r == "apply" and self._run(
             lambda: engine.apply_plan(plan), _("Applied “{}”.").format(profile.name)))
-        dlg.present()
+        dlg.present(self)
 
     def _on_restore(self, *_a):
         self._run(engine.restore_last, _("Restored previous settings."))
 
     def _run(self, fn, ok_msg):
-        def work():
-            errs = fn()
-            GLib.idle_add(self._done, errs, ok_msg)
-        threading.Thread(target=work, daemon=True).start()
-
-    def error(self, heading, body):
-        dlg = Adw.MessageDialog(transient_for=self, heading=heading, body=body)
-        dlg.add_response("ok", "OK")
-        dlg.present()
+        _in_background(fn, lambda errs: self._done(errs, ok_msg),
+                       lambda e: self._done([str(e)], ok_msg))
 
     def _done(self, errs, ok_msg):
         if errs:
@@ -301,161 +356,14 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.toast(ok_msg)
         self.refresh_status()
-        return False
 
+    def toast(self, msg):
+        self.toasts.add_toast(Adw.Toast(title=msg))
 
-# Profile bullets: half the default vertical padding of an Adw.ActionRow (50 px row, ~17 px text).
-COMPACT_CSS = """
-list.boxed-list > row.pd-compact, row.pd-compact { min-height: 0; padding-top: 0; padding-bottom: 0; }
-row.pd-compact > box.header { min-height: 0; padding-top: 2px; padding-bottom: 2px; }  /* + 6 px title padding = 8 px */
-/* active profile tile in the sidebar: accent frame, no layout shift */
-.navigation-sidebar > row.pd-active { box-shadow: inset 0 0 0 2px @accent_bg_color; }
-row.pd-compact button.pd-info { min-height: 24px; min-width: 24px; padding: 0; margin-top: -4px; margin-bottom: -4px; }
-"""
-
-# Status / Monitor rows: (what it means, where the value comes from)
-STATUS_HELP = {
-    "active": ("Profile applied last by PowerDeck. Changes made outside PowerDeck are not detected.",
-               "cat ~/.local/state/powerdeck/active.json"),
-    "battery": ("Charge in % (average over all batteries) and charging state from the kernel.",
-                "cat /sys/class/power_supply/BAT*/capacity /sys/class/power_supply/BAT*/status"),
-    "conn": ("First active Wi-Fi, Ethernet or mobile connection in NetworkManager.",
-             "nmcli -t -f NAME,TYPE connection show --active"),
-    "mode": ("Current power-profiles-daemon mode: power-saver, balanced or performance.",
-             "powerprofilesctl get"),
-    "wifips": ("Real power-save state of the Wi-Fi adapter right now (not the saved profile value).",
-               "iw dev <interface> get power_save"),
-    "sessions": ("Established SSH (port 22) and RDP (port 3389) connections and login sessions.",
-                 "ss -Htn state established sport = :22\nss -Htn state established sport = :3389\n"
-                 "loginctl list-sessions --no-legend"),
-}
-MONITOR_HELP = {
-    "temp": ("Hottest CPU thermal zone (x86_pkg_temp, coretemp, k10temp…); compared with the "
-             "active profile's thermal limits.", "cat /sys/class/thermal/thermal_zone*/{type,temp}"),
-    "freq": ("Average current clock of all cores, % of the hardware maximum, the configured cap "
-             "and turbo state.", "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq"),
-    "load": ("Share of CPU time not idle since the previous sample (every 2 s).", "head -1 /proc/stat"),
-    "power": ("Battery power: + discharging, − charging. Not reported by every laptop.",
-              "cat /sys/class/power_supply/BAT*/power_now"),
-    "fan": ("Fastest fan reported by hwmon. Not reported by every laptop.",
-            "cat /sys/class/hwmon/hwmon*/fan*_input"),
-}
-
-
-def _help_markup(text: str, command: str) -> str:
-    return (GLib.markup_escape_text(_(text)) + "\n\n" + GLib.markup_escape_text(_("Source:"))
-            + "\n<tt>" + GLib.markup_escape_text(command) + "</tt>")
-
-
-_NONE = "—"
-
-
-def _combo(options, selected=0):
-    r = Adw.ComboRow()
-    r.set_model(Gtk.StringList.new(options))
-    r.set_selected(selected)
-    return r
-
-
-class ProfileEditor(Adw.Window):
-    """Create or edit a profile. Saved as JSON in ~/.config/powerdeck/profiles/."""
-
-    def __init__(self, parent, profile):
-        super().__init__(transient_for=parent, modal=True, title=_("Edit profile"),
-                         default_width=520, default_height=640)
-        self.parent_win = parent
-        p = profile or Profile(name="")
-        self.src = p
-        self.name = Adw.EntryRow(title=_("Name"), text=p.name)
-        self.desc = Adw.EntryRow(title=_("Description"), text=p.description)
-        lid_opts = [_NONE, *LID_ACTIONS]
-        self.lid = _combo(lid_opts, lid_opts.index(p.lid.get("battery", _NONE)) if p.lid else 0)
-        self.lid.set_title(_("Lid close"))
-        yn = [_NONE, _("Allowed"), _("Disabled")]
-        cur = p.automatic_suspend.get("battery")
-        self.auto = _combo(yn, 0 if cur is None else (1 if cur else 2))
-        self.auto.set_title(_("Automatic suspend"))
-        wf = [_NONE, "default", "off", "on"]
-        self.wifi = _combo(wf, wf.index(p.wifi_powersave) if p.wifi_powersave else 0)
-        self.wifi.set_title(_("Wi-Fi powersave"))
-        pm = [_NONE, *POWER_MODES]
-        self.mode = _combo(pm, pm.index(p.power_mode) if p.power_mode else 0)
-        self.mode.set_title(_("Power mode"))
-        self.nets = Adw.EntryRow(title=_("Wi-Fi networks (comma separated)"),
-                                 text=", ".join(p.preferred_networks))
-        self.teth = Adw.EntryRow(title=_("Tethering connection"), text=p.tethering.get("connection", ""))
-        bt = [_NONE, "on", "off"]
-        self.bt = _combo(bt, 0 if p.bluetooth is None else (1 if p.bluetooth else 2))
-        self.bt.set_title("Bluetooth")
-
-        tb = [_NONE, "on", "off"]
-        t = p.cpu.get("turbo")
-        self.turbo = _combo(tb, 0 if t is None else (1 if t else 2))
-        self.turbo.set_title(_("CPU turbo"))
-        self.fmax_opts = [_NONE, *[f"{v} %" for v in (100, 90, 80, 70, 60, 50, 40, 30)]]
-        m = p.cpu.get("max_freq_percent")
-        idx = self.fmax_opts.index(f"{m} %") if f"{m} %" in self.fmax_opts else 0
-        self.fmax = _combo(self.fmax_opts, idx)
-        self.fmax.set_title(_("CPU max frequency"))
-        self._fmax_custom = m if m is not None and idx == 0 else None  # keep unusual values untouched
-
-        grp = Adw.PreferencesGroup()
-        for w in (self.name, self.desc, self.lid, self.auto, self.wifi, self.mode, self.nets, self.teth,
-                  self.bt, self.turbo, self.fmax):
-            grp.add(w)
-        page = Adw.PreferencesPage()
-        page.add(grp)
-        self.msg = Gtk.Label(wrap=True, css_classes=["error"])
-        save = Gtk.Button(label=_("Save"), css_classes=["suggested-action", "pill"], halign=Gtk.Align.CENTER)
-        save.connect("clicked", self._save)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_bottom=12)
-        box.append(self.msg)
-        box.append(save)
-        view = Adw.ToolbarView()
-        view.add_top_bar(Adw.HeaderBar())
-        view.set_content(page)
-        view.add_bottom_bar(box)
-        self.set_content(view)
-
-    def _sel(self, combo):
-        return None if combo.get_selected() == 0 else combo.get_selected_item().get_string()
-
-    def build(self) -> Profile:
-        old = self.src
-        d = old.to_dict()
-        d["name"] = self.name.get_text().strip()
-        d["description"] = self.desc.get_text().strip()
-        lid = self._sel(self.lid)
-        d["lid"] = {k: lid for k in ("battery", "ac", "docked")} if lid else {}
-        a = self.auto.get_selected()
-        d["automatic_suspend"] = {} if a == 0 else {"battery": a == 1, "ac": a == 1}
-        d["wifi_powersave"] = self._sel(self.wifi)
-        d["power_mode"] = self._sel(self.mode)
-        d["preferred_networks"] = [n.strip() for n in self.nets.get_text().split(",") if n.strip()]
-        t = self.teth.get_text().strip()
-        d["tethering"] = {"connection": t, "priority": old.tethering.get("priority", 100)} if t else {}
-        b = self.bt.get_selected()
-        d["bluetooth"] = None if b == 0 else b == 1
-        cpu = {}
-        tb = self.turbo.get_selected()
-        if tb:
-            cpu["turbo"] = tb == 1
-        fm = self.fmax.get_selected()
-        if fm:
-            cpu["max_freq_percent"] = int(self.fmax_opts[fm].split()[0])
-        elif self._fmax_custom is not None:
-            cpu["max_freq_percent"] = self._fmax_custom
-        d["cpu"] = cpu
-        return Profile.from_dict(d)
-
-    def _save(self, *_a):
-        try:
-            save_profile(self.build())
-        except (ProfileError, OSError, TypeError) as e:
-            self.msg.set_text(str(e))
-            return
-        self.parent_win.reload_profiles()
-        self.close()
+    def error(self, heading, body):
+        dlg = Adw.AlertDialog(heading=heading, body=body)
+        dlg.add_response("ok", "OK")
+        dlg.present(self)
 
 
 class App(Adw.Application):
@@ -468,7 +376,10 @@ class App(Adw.Application):
         # and switch live when the user changes it. No hardcoded colours anywhere.
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
         css = Gtk.CssProvider()
-        css.load_from_data(COMPACT_CSS, -1)
+        if hasattr(css, "load_from_string"):  # GTK >= 4.12; load_from_data is deprecated there
+            css.load_from_string(COMPACT_CSS)
+        else:
+            css.load_from_data(COMPACT_CSS, -1)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 

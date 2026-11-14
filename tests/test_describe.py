@@ -157,3 +157,23 @@ def test_language_selection(monkeypatch):
     monkeypatch.setenv("LANGUAGE", "")
     monkeypatch.setenv("LC_ALL", "C")
     assert i18n._("Battery") == "Battery"
+
+
+def test_every_translatable_string_has_slovak():
+    """Each literal passed to _() and each GUI help text/row title needs an SK entry."""
+    import ast
+    from pathlib import Path
+    from powerdeck import gui_texts
+    from powerdeck.describe import LID_VERB, POWER_MODE_TEXT, WIFI_TEXT
+    from powerdeck.i18n import SK
+    texts = set()
+    for f in (Path(__file__).parent.parent / "powerdeck").glob("*.py"):
+        for node in ast.walk(ast.parse(f.read_text())):
+            if (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_" and node.args
+                    and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+                texts.add(node.args[0].value)
+    texts |= {t for _k, t in gui_texts.STATUS_ROWS} | {t for _k, t, _b in gui_texts.MONITOR_ROWS}
+    texts |= {h[0] for h in (*gui_texts.STATUS_HELP.values(), *gui_texts.MONITOR_HELP.values())}
+    texts |= set(LID_VERB.values()) | set(POWER_MODE_TEXT.values()) | set(WIFI_TEXT.values())
+    texts |= {p.description for p in BUILTIN_PROFILES}
+    assert sorted(t for t in texts if t not in SK) == []
