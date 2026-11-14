@@ -231,3 +231,23 @@ def test_old_backup_names_still_read_in_order(tmp_path):
     sets = [c[2] for c in sysm.calls if c[:2] == ["powerprofilesctl", "set"]]
     assert sets == ["power-saver", "performance", "power-saver", "balanced"]
     assert sysm.mode == "balanced"
+
+
+@pytest.mark.parametrize("bad", [
+    {"name": "X", "lid": []}, {"name": "X", "lid": "ignore"}, {"name": "X", "automatic_suspend": [1]},
+    {"name": "X", "display": None}, {"name": "X", "cpu": "fast"}, {"name": "X", "tethering": ["Tel"]},
+    {"name": "X", "tasks": []}, {"name": "X", "tasks": {"on_activate": "systemctl --user start a.service"}},
+    {"name": "X", "tasks": {"on_activate": [1]}}, {"name": "X", "thermal_guard": [80, 90]},
+    {"name": "X", "thermal_guard": {"warn_celsius": 80}}, {"name": "X", "thermal_guard": {"warn_celsius": "80", "critical_celsius": 90}},
+    {"name": "X", "preferred_networks": "Home"}, {"name": "X", "preferred_networks": [1]},
+    {"name": 5}, {"name": None}, {"name": "X", "description": ["x"]}, {"name": "X", "bluetooth": 1},
+    {"name": "X", "wifi_powersave": []}, {"name": "X", "power_mode": {}}, {"name": "X", "lid": {"battery": []}},
+    {"name": "X", "display": {"blank_after_minutes": True}}, {"name": "X", "remote_access": "yes"},
+    [1, 2], "Default", 3, None,
+])
+def test_malformed_user_profiles_are_skipped(tmp_path, bad):
+    (tmp_path / "bad.json").write_text(json.dumps(bad))
+    with pytest.raises(ProfileError):
+        Profile.from_dict(bad)
+    names = [p.name for p in load_profiles(tmp_path)]       # never crashes, built-ins still there
+    assert "X" not in names and "Default" in names
