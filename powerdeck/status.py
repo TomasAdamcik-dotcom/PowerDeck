@@ -62,7 +62,9 @@ def read_cpu_temp(root: str = "/sys/class/thermal") -> float | None:
     return max(pool) if pool else None
 
 
-def _count_lines(out: str, rc: int) -> int:
+def _count_lines(run: Runner, argv: list[str]) -> int:
+    """Number of non-empty output lines of a command (0 if it fails)."""
+    rc, out = run(argv)
     return len([l for l in out.splitlines() if l.strip()]) if rc == 0 else 0
 
 
@@ -79,9 +81,9 @@ def read_status(run: Runner = system_runner, remote_login: bool = False) -> Stat
                 conn = name
                 break
     rc, pm = run(["powerprofilesctl", "get"])
-    ssh = _count_lines(*reversed(run(["ss", "-Htn", "state", "established", "sport", "=", ":22"])))
-    rdp = _count_lines(*reversed(run(["ss", "-Htn", "state", "established", "sport", "=", ":3389"])))
-    sess = _count_lines(*reversed(run(["loginctl", "list-sessions", "--no-legend"])))
+    ssh = _count_lines(run, ["ss", "-Htn", "state", "established", "sport", "=", ":22"])
+    rdp = _count_lines(run, ["ss", "-Htn", "state", "established", "sport", "=", ":3389"])
+    sess = _count_lines(run, ["loginctl", "list-sessions", "--no-legend"])
     return Status(pct, state, read_cpu_temp(), conn, pm if rc == 0 else None,
                   ssh, rdp, sess, read_wifi_powersave(run),
                   read_remote_login(run) if remote_login else None)
