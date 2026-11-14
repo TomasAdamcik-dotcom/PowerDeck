@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import glob
-import os
 
 CPU_ROOT = "/sys/devices/system/cpu"  # tests point this at a fake tree
 

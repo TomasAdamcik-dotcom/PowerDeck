@@ -1,6 +1,7 @@
 import pytest
 
-from powerdeck import backends, engine
+from powerdeck import commands as cmd
+from powerdeck import engine
 from powerdeck.builtin import BUILTIN_PROFILES
 from powerdeck.describe import describe
 from powerdeck.profile import Profile
@@ -50,16 +51,69 @@ def test_empty_profile_has_fallback_summary():
     assert d.items == [] and "0 setting" in d.summary
 
 
-def test_described_commands_match_what_plan_runs(tmp_path, monkeypatch):
-    """The GUI tooltip must show the same commands the engine really executes."""
-    from powerdeck import cpu
-    make_cpu(tmp_path / "c")
+class EverythingDiffers:
+    """Fake system where every setting differs from what the profile wants, so all of it is planned."""
+
+    def __init__(self, p):
+        self.p = p
+
+    def __call__(self, a):
+        if a[:2] == ["gsettings", "get"]:
+            return 0, "'something-else'"
+        if a == cmd.LIST_CONNECTIONS:
+            return 0, "Home:802-11-wireless\nWired:802-3-ethernet"
+        if a[:3] == ["nmcli", "-g", "802-11-wireless.powersave"]:
+            return 0, "1"
+        if a[:2] == ["nmcli", "-g"]:
+            return 0, "no\n0"
+        if a == ["powerprofilesctl", "get"]:
+            return 0, "something-else"
+        if a[:2] == ["rfkill", "list"]:
+            return 0, f"0: hci0: Bluetooth\n\tSoft blocked: {'yes' if self.p.bluetooth else 'no'}"
+        if a == ["brightnessctl", "-m"]:
+            return 0, "intel_backlight,backlight,1,1%,100"
+        return 127, ""
+
+
+# Shown so the user knows what happens, but not run by `apply` itself.
+NOT_RUN_BY_APPLY = {tuple(cmd.LIST_CONNECTIONS), tuple(cmd.screensaver("SetActive", "false")),
+                    tuple(cmd.ENABLE_GUARD)}
+
+EXTRA = [
+    Profile(name="Everything", lid={"battery": "lock", "ac": "ignore", "docked": "suspend"},
+            automatic_suspend={"battery": True}, wifi_powersave="on", preferred_networks=["My Phone", "C"],
+            tethering={"connection": "Tel", "priority": 7}, bluetooth=True, cpu={"max_freq_percent": 60},
+            display={"blank_after_minutes": 3, "lock_after_minutes": 10, "brightness_percent": 30},
+            tasks={"on_activate": ["systemctl --user start a.service", "systemctl --user restart c.service"],
+                   "on_deactivate": ["systemctl --user stop b.service"]}),
+    Profile(name="NoLock", automatic_suspend={"battery": False, "ac": True}, cpu={"turbo": True},
+            display={"lock_after_minutes": 0, "night_light": True}),
+]
+
+
+def _matches(shown, argv):
+    """``<…>`` in a shown command stands for any value (e.g. "<each Wi-Fi network>")."""
+    return len(shown) == len(argv) and all(s == a or (s.startswith("<") and s.endswith(">"))
+                                           for s, a in zip(shown, argv))
+
+
+@pytest.mark.parametrize("profile", BUILTIN_PROFILES + EXTRA, ids=lambda p: p.name)
+def test_described_commands_are_exactly_what_plan_runs(profile, tmp_path, monkeypatch):
+    """The GUI tooltips must show the commands the engine really executes, and nothing else."""
+    from powerdeck import cpu, helper
+    make_cpu(tmp_path / "c", cur_max=3_080_000, no_turbo="0" if profile.cpu.get("turbo") is False else "1")
     monkeypatch.setattr(cpu, "CPU_ROOT", str(tmp_path / "c"))
-    monkeypatch.setattr(backends.helper, "DROPIN_DIR", str(tmp_path / "l"))
-    plan = engine.make_plan(BY["Rucksack"], lambda a: (127, ""))
-    shown = {c for it in describe(BY["Rucksack"]).items for c in map(tuple, it.commands)}
-    for ch in plan.changes:
-        assert tuple(ch.apply_argv) in shown, ch.apply_argv
+    monkeypatch.setattr(helper, "DROPIN_DIR", str(tmp_path / "l"))
+    helper.main(["set-lid", "poweroff", "poweroff", "poweroff"], str(tmp_path / "l"), reload=False)
+    run = EverythingDiffers(profile)
+    planned = [c.apply_argv for c in engine.make_plan(profile, run).changes]
+    # on_deactivate tasks run when leaving this profile for another one
+    planned += [c.apply_argv for c in engine.make_plan(Profile(name="Other"), run, previous=profile).changes]
+    shown = [c for it in describe(profile).items for c in it.commands]
+    for argv in planned:
+        assert any(_matches(s, argv) for s in shown), f"run but not shown: {argv}"
+    for s in shown:
+        assert tuple(s) in NOT_RUN_BY_APPLY or any(_matches(s, a) for a in planned), f"shown but not run: {s}"
 
 
 def test_slovak(monkeypatch):
@@ -103,3 +157,23 @@ def test_language_selection(monkeypatch):
     monkeypatch.setenv("LANGUAGE", "")
     monkeypatch.setenv("LC_ALL", "C")
     assert i18n._("Battery") == "Battery"
+
+
+def test_every_translatable_string_has_slovak():
+    """Each literal passed to _() and each GUI help text/row title needs an SK entry."""
+    import ast
+    from pathlib import Path
+    from powerdeck import gui_texts
+    from powerdeck.describe import LID_VERB, POWER_MODE_TEXT, WIFI_TEXT
+    from powerdeck.i18n import SK
+    texts = set()
+    for f in (Path(__file__).parent.parent / "powerdeck").glob("*.py"):
+        for node in ast.walk(ast.parse(f.read_text())):
+            if (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_" and node.args
+                    and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+                texts.add(node.args[0].value)
+    texts |= {t for _k, t in gui_texts.STATUS_ROWS} | {t for _k, t, _b in gui_texts.MONITOR_ROWS}
+    texts |= {h[0] for h in (*gui_texts.STATUS_HELP.values(), *gui_texts.MONITOR_HELP.values())}
+    texts |= set(LID_VERB.values()) | set(POWER_MODE_TEXT.values()) | set(WIFI_TEXT.values())
+    texts |= {p.description for p in BUILTIN_PROFILES}
+    assert sorted(t for t in texts if t not in SK) == []

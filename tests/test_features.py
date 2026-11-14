@@ -327,3 +327,23 @@ def test_reset_all_continues_after_errors(tmp_path):
     errs = engine.reset_all(flaky, tmp_path / "b", active_file=tmp_path / "a.json")
     assert errs == ["Bluetooth: rfkill: blocked by policy"]
     assert f.gs["idle-delay"] == "300"                               # the rest still reverted
+
+
+def test_monitor_thermal_level_uses_active_profile_limits():
+    assert status.profile_thermal_level(75, BY["Rucksack"]) == "warn"       # 70/82
+    assert status.profile_thermal_level(83, BY["Rucksack"]) == "critical"
+    assert status.profile_thermal_level(83, BY["RemoteWork"]) == "ok"       # 85/92
+    assert status.profile_thermal_level(83, BY["Default"]) == "ok"          # no guard: defaults
+    assert status.profile_thermal_level(86, None) == "warn"
+    assert status.profile_thermal_level(None, BY["Rucksack"]) == "unknown"
+
+
+def test_grdctl_only_queried_where_its_value_is_used(tmp_path):
+    calls = []
+    run = lambda a: (calls.append(a), (1, ""))[1]
+    status.read_status(run)
+    guard.run_once(guard.GuardState(), run, _remote_profiles(tmp_path, "RemoteWork"))
+    assert calls and not any(c[0] == "grdctl" for c in calls)
+    s = status.read_status(lambda a: (0, "RDP:\n\tStatus: enabled\n") if a[0] == "grdctl" else (1, ""),
+                           remote_login=True)
+    assert s.remote_login == "enabled"

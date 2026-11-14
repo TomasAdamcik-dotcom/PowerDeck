@@ -28,9 +28,8 @@ if a.active:
         json.dump({"profile": a.active}, f)
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from powerdeck import gtk_app  # noqa: E402  (selects the GTK 4 / Adw 1 versions first)
 from gi.repository import GLib, Gtk  # noqa: E402
-
-from powerdeck import gtk_app  # noqa: E402
 
 app = gtk_app.App()
 

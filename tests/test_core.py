@@ -194,3 +194,70 @@ def test_thermal_suspend_policy_matches_guard_and_is_minimal():
     script = (base / "data" / "powerdeck-suspend").read_text()
     cmds = [l for l in script.splitlines() if l.strip() and not l.startswith("#")]
     assert cmds == ["exec /usr/bin/systemctl suspend --ignore-inhibitors"]   # nothing else, no args
+
+
+def test_backups_same_second_undo_newest_first(tmp_path, monkeypatch):
+    """Two applies within one clock tick: restore must undo the second one first."""
+    sysm, b, active = FakeSystem(), tmp_path / "b", tmp_path / "active.json"
+    monkeypatch.setattr(engine.time, "time_ns", lambda: 1_700_000_000_000_000_000)
+    assert engine.apply_plan(engine.make_plan(Profile(name="B", power_mode="performance"), sysm),
+                             sysm, b, active) == []
+    assert engine.apply_plan(engine.make_plan(Profile(name="A", power_mode="power-saver"), sysm),
+                             sysm, b, active) == []
+    assert engine.restore_last(sysm, b, active) == []
+    assert sysm.mode == "performance" and engine.active_profile(active) == "B"
+    assert engine.restore_last(sysm, b, active) == []
+    assert sysm.mode == "balanced"
+
+
+def test_old_backup_names_still_read_in_order(tmp_path):
+    """Backups written by PowerDeck <= 0.3 ("<stamp>[-<n>]-<profile>.json") keep working."""
+    sysm, b = FakeSystem(), tmp_path / "b"
+    b.mkdir()
+
+    def backup(name, old, new):
+        ch = {"backend": "power-profiles", "target": "Power mode", "old": old, "new": new,
+              "apply_argv": ["powerprofilesctl", "set", new],
+              "revert_argv": ["powerprofilesctl", "set", old], "privileged": False}
+        (b / name).write_text(json.dumps({"profile": name, "previous": None, "changes": [ch]}))
+
+    # applied in this order: m1 (balanced → power-saver) ... m4; newest must be undone first
+    backup("20250101-120000-Zed.json", "balanced", "power-saver")
+    backup("20250101-120000-1-Alpha.json", "power-saver", "performance")
+    backup("20250101-120000-2-Beta.json", "performance", "power-saver")
+    backup("01700000000000000000-New.json", "power-saver", "performance")
+    sysm.mode = "performance"
+    assert engine.reset_all(sysm, b, active_file=tmp_path / "a.json") == []
+    sets = [c[2] for c in sysm.calls if c[:2] == ["powerprofilesctl", "set"]]
+    assert sets == ["power-saver", "performance", "power-saver", "balanced"]
+    assert sysm.mode == "balanced"
+
+
+@pytest.mark.parametrize("bad", [
+    {"name": "X", "lid": []}, {"name": "X", "lid": "ignore"}, {"name": "X", "automatic_suspend": [1]},
+    {"name": "X", "display": None}, {"name": "X", "cpu": "fast"}, {"name": "X", "tethering": ["Tel"]},
+    {"name": "X", "tasks": []}, {"name": "X", "tasks": {"on_activate": "systemctl --user start a.service"}},
+    {"name": "X", "tasks": {"on_activate": [1]}}, {"name": "X", "thermal_guard": [80, 90]},
+    {"name": "X", "thermal_guard": {"warn_celsius": 80}}, {"name": "X", "thermal_guard": {"warn_celsius": "80", "critical_celsius": 90}},
+    {"name": "X", "preferred_networks": "Home"}, {"name": "X", "preferred_networks": [1]},
+    {"name": 5}, {"name": None}, {"name": "X", "description": ["x"]}, {"name": "X", "bluetooth": 1},
+    {"name": "X", "wifi_powersave": []}, {"name": "X", "power_mode": {}}, {"name": "X", "lid": {"battery": []}},
+    {"name": "X", "display": {"blank_after_minutes": True}}, {"name": "X", "remote_access": "yes"},
+    [1, 2], "Default", 3, None,
+])
+def test_malformed_user_profiles_are_skipped(tmp_path, bad):
+    (tmp_path / "bad.json").write_text(json.dumps(bad))
+    with pytest.raises(ProfileError):
+        Profile.from_dict(bad)
+    names = [p.name for p in load_profiles(tmp_path)]       # never crashes, built-ins still there
+    assert "X" not in names and "Default" in names
+
+
+def test_restore_reports_broken_backup_instead_of_crashing(tmp_path):
+    b = tmp_path / "b"
+    b.mkdir()
+    (b / "01700000000000000000-X.json").write_text('{"changes": [{"backend": "x"}]}')
+    errs = engine.restore_last(FakeSystem(), b, tmp_path / "a.json")
+    assert len(errs) == 1 and "malformed" in errs[0]
+    (tmp_path / "a.json").write_text("[]")
+    assert engine.active_profile(tmp_path / "a.json") is None

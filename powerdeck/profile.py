@@ -33,6 +33,17 @@ def parse_task(cmd: str) -> list[str]:
     return argv
 
 
+_DICT_FIELDS = ("lid", "automatic_suspend", "thermal_guard", "tasks", "tethering", "display", "cpu")
+
+
+def _is_int(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 @dataclass
 class Profile:
     """A set of laptop settings. ``None`` means "leave unmanaged"."""
@@ -56,8 +67,16 @@ class Profile:
     builtin: bool = False
 
     def validate(self) -> None:
-        if not _NAME_RE.match(self.name or ""):
+        if not isinstance(self.name, str) or not _NAME_RE.match(self.name):
             raise ProfileError("Invalid profile name")
+        if not isinstance(self.description, str):
+            raise ProfileError("description must be a string")
+        # wrong JSON types must end up as ProfileError too (load_profiles skips those files)
+        for k in _DICT_FIELDS:
+            if not isinstance(getattr(self, k), dict):
+                raise ProfileError(f"{k} must be an object")
+        if not isinstance(self.preferred_networks, list):
+            raise ProfileError("preferred_networks must be a list")
         for k, v in self.lid.items():
             if k not in ("battery", "ac", "docked"):
                 raise ProfileError(f"Unknown lid key: {k}")
@@ -78,16 +97,16 @@ class Profile:
             c = t.get("connection")
             if not isinstance(c, str) or not c or c.startswith("-"):
                 raise ProfileError("tethering.connection invalid")
-            if not isinstance(t.get("priority", 100), int) or not -999 <= t.get("priority", 100) <= 999:
+            if not _is_int(t.get("priority", 100)) or not -999 <= t.get("priority", 100) <= 999:
                 raise ProfileError("tethering.priority invalid")
         d = self.display
         for k in d:
             if k not in ("blank_after_minutes", "lock_after_minutes", "lock_screen", "brightness_percent", "night_light"):
                 raise ProfileError(f"Unknown display key: {k}")
         for k in ("blank_after_minutes", "lock_after_minutes"):
-            if k in d and not (isinstance(d[k], int) and 0 <= d[k] <= 1440):
+            if k in d and not (_is_int(d[k]) and 0 <= d[k] <= 1440):
                 raise ProfileError(f"display.{k} invalid")
-        if "brightness_percent" in d and not (isinstance(d["brightness_percent"], int) and 1 <= d["brightness_percent"] <= 100):
+        if "brightness_percent" in d and not (_is_int(d["brightness_percent"]) and 1 <= d["brightness_percent"] <= 100):
             raise ProfileError("display.brightness_percent invalid")
         if "night_light" in d and not isinstance(d["night_light"], bool):
             raise ProfileError("display.night_light invalid")
@@ -98,25 +117,30 @@ class Profile:
         for k, v in self.cpu.items():
             if k == "turbo" and isinstance(v, bool):
                 continue
-            if k == "max_freq_percent" and isinstance(v, int) and not isinstance(v, bool) and 10 <= v <= 100:
+            if k == "max_freq_percent" and _is_int(v) and 10 <= v <= 100:
                 continue
             raise ProfileError(f"Invalid cpu setting: {k}={v!r}")
-        if self.bluetooth not in (None, True, False):
+        if self.bluetooth is not None and not isinstance(self.bluetooth, bool):
             raise ProfileError("bluetooth must be true/false")
-        if self.remote_access not in (None, True, False):
+        if self.remote_access is not None and not isinstance(self.remote_access, bool):
             raise ProfileError("remote_access must be true/false")
         if self.remote_access and d.get("lock_screen") is not False:
             # a locked screen cannot be dismissed over D-Bus, so the guard could not help
             raise ProfileError("remote_access requires display.lock_screen = false")
-        for k in ("on_activate", "on_deactivate"):
-            for cmd in self.tasks.get(k, []):
-                parse_task(cmd)
-        for k in self.tasks:
+        for k, cmds in self.tasks.items():
             if k not in ("on_activate", "on_deactivate"):
                 raise ProfileError(f"Unknown tasks key: {k}")
+            if not isinstance(cmds, list) or not all(isinstance(c, str) for c in cmds):
+                raise ProfileError(f"tasks.{k} must be a list of commands")
+            for cmd in cmds:
+                parse_task(cmd)
         tg = self.thermal_guard
-        if tg and tg.get("warn_celsius", 0) >= tg.get("critical_celsius", 999):
-            raise ProfileError("thermal_guard: warn must be below critical")
+        if tg:
+            if set(tg) != {"warn_celsius", "critical_celsius"} or not all(
+                    _is_number(v) for v in tg.values()):
+                raise ProfileError("thermal_guard needs numbers warn_celsius and critical_celsius")
+            if tg["warn_celsius"] >= tg["critical_celsius"]:
+                raise ProfileError("thermal_guard: warn must be below critical")
 
     # -- (de)serialisation -------------------------------------------------
     def to_dict(self) -> dict:
@@ -126,6 +150,8 @@ class Profile:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Profile":
+        if not isinstance(d, dict):
+            raise ProfileError("A profile must be a JSON object")
         d = dict(d)
         d.pop("builtin", None)
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
