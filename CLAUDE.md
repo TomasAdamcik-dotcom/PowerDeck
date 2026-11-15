@@ -32,7 +32,9 @@ maintainer scripts written by `scripts/build-deb.sh`, and `scripts/install-helpe
   merged into `develop` only after it is tested. Never merge into `main`; the owner promotes
   develop → main. Push to GitHub only when asked.
 - Tests: `python3 -m pytest -q`; without root or the real machine: `scripts/dev-container.sh all`
-  (rootless podman: tests, `.deb` install/uninstall, headless GUI screenshot).
+  (rootless podman: tests, `.deb` install/uninstall, headless GUI screenshot). For systemd,
+  logind, pkexec, the guard service and the lid: `scripts/dev-vm.sh start|test|lid close|ssh`
+  (QEMU/KVM GNOME VM, see README) before asking the owner to test on the laptop.
 - Never type the owner's `sudo`/`pkexec` passwords; the owner runs `sudo …` and confirms pkexec.
 - Before testing on the real laptop: `diff powerdeck/helper.py /usr/libexec/powerdeck-helper`
   — if they differ, the owner must run `sudo scripts/install-helper.sh` first.

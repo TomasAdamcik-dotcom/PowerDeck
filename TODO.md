@@ -16,12 +16,13 @@ Bezpečné (nič nemenia):
 Zmeny (až po záložke vyššie):
 - [x] Inštalácia: `scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb` (alebo `sudo scripts/install-helper.sh`)
 - [x] `apply RemoteWork` → `pkexec` ukáže náš SK/EN text; vznikne `/etc/systemd/logind.conf.d/99-powerdeck-lid.conf`
+- [x] Veko vo VM end-to-end (simulovaný SW_LID): s drop-inom RemoteWork sa nezaspí, po `restore` zatvorenie veka uspí ✓
 - [x] Overiť, že reload `logind` cez HUP (`systemctl kill -s HUP systemd-logind`) drop-in naozaj prečíta (inak treba reštart/odhlásenie – potom zmeniť helper) ✓ `busctl` hneď hlási `HandleLidSwitch=ignore`
-- [ ] Test zavretia veka 3–5 min + ping/SSH z telefónu – systém nezaspí ✓; RDP (desktop sharing) padal: gsd-power pri zatvorenom veku a zablokovanom suspende (Claude Desktop inhibitor) zapne šetrič a gnome-shell v režime `unlock-dialog` zakáže remote desktop. Riešenie: `remote_access` profily + guard zruší šetrič (overiť s vekom), Remote Login ako robustná cesta
+- [ ] Test zavretia veka 3–5 min + ping/SSH z telefónu – systém nezaspí ✓; RDP (desktop sharing) padal: gsd-power pri zatvorenom veku a zablokovanom suspende (Claude Desktop inhibitor) zapne šetrič a gnome-shell v režime `unlock-dialog` zakáže remote desktop. Riešenie: `remote_access` profily + guard zruší šetrič (overiť s vekom), Remote Login ako robustná cesta. **VM (2026-11-15):** guard ako systemd služba zruší šetrič do 0,1 s a nová RDP session (Mutter RemoteDesktop) je hneď možná; bez guardu „Session creation inhibited“. Cestu veko → šetrič vo VM nejde zopakovať (QEMU displej = externý monitor), preto treba ešte test na notebooku
 - [ ] Zapnúť a otestovať GNOME Remote Login (Nastavenia → Systém → Vzdialená plocha → Vzdialené prihlásenie)
 - [x] `restore` vráti pôvodný stav (opakované `restore` ide ďalej späť)
 - [ ] Zrušený `pkexec` dialóg → appka ukáže chybu a stav ostane konzistentný
-- [ ] `powerdeck guard --once` a systemd služba: `systemctl --user enable --now powerdeck-guard` – prídu notifikácie pri prekročení prahu?
+- [ ] `powerdeck guard --once` a systemd služba: `systemctl --user enable --now powerdeck-guard` – prídu notifikácie pri prekročení prahu? (VM: služba sa zapne a beží, notifikácie pri teplote neoverené – VM nemá senzor)
 - [ ] `powerdeck snapshot` – uloží aktuálne nastavenia ako profil Default (prepíše vstavaný)
 
 ## 0b. Test limitu CPU a monitoringu (nové, treba reálny HW)
@@ -45,7 +46,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 
 - [ ] Uspanie pri kritickej teplote bez čakania na skutočné prehriatie: dočasne si v editore daj vlastný profil s nízkym prahom (napr. warn 40 / critical 45 °C), aplikuj ho, spusti `powerdeck guard --once` → má prísť notifikácia „PowerDeck: uspávam – dosiahnutá maximálna teplota“ a o 5 s sa notebook uspí
 - [ ] To isté so spustenou aplikáciou, ktorá blokuje uspanie (napr. Claude Desktop): `systemctl suspend` zlyhá a guard použije `pkexec /usr/libexec/powerdeck-suspend` – **overiť, že polkit to pustí bez hesla aj zo systemd user služby** (akcia `io.github.powerdeck.thermal-suspend`, `allow_active=yes`; služba nie je v logind relácii, polkit ju má priradiť ku grafickej relácii používateľa)
-- [ ] Odinštalovanie: aplikuj napr. Rucksack, potom `sudo apt remove powerdeck` → nastavenia ako pred PowerDeckom (veko, gsettings, Wi‑Fi powersave, power mode, Bluetooth, turbo/CPU limit), guard služba zastavená. V kontajneri overené len pre gsettings + drop-in veka (bez systemd/NetworkManager)
+- [ ] Odinštalovanie: aplikuj napr. Rucksack, potom `sudo apt remove powerdeck` → nastavenia ako pred PowerDeckom (veko, gsettings, Wi‑Fi powersave, power mode, Bluetooth, turbo/CPU limit), guard služba zastavená. V kontajneri overené len pre gsettings + drop-in veka (bez systemd/NetworkManager). **VM (2026-11-15) ✓** veko, power mode, zámok, idle, auto-suspend, guard služba zastavená; Wi‑Fi/BT/turbo vo VM nie sú – ostáva overiť na notebooku
 - [ ] `apt` upgrade (nová verzia `.deb`) nastavenia **nesmie** vrátiť – prerm robí reset len pri „remove“
 
 ## 1. Hotové (od v0.1)
