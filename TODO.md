@@ -96,6 +96,26 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 - [x] Odstránené rozpory v textoch aj akciách: strážca pri kritickej teplote prepína na power-saver len ak ešte nebeží (inak len naliehavo varuje, a tak to aj píše); Wi‑Fi powersave bez zoznamu sietí sa teraz naozaj aplikuje na všetky uložené Wi‑Fi siete (predtým text sľuboval zmenu, ale nič sa nestalo); Travel „turbo off + 100 %“ už nepíše „bez limitu“
 - [ ] Vizuálna kontrola GUI na reálnej ploche (screenshot sa v cloude nerobil)
 
+## 2c. Možné vylepšenia (navrhnuté, zatiaľ neschválené)
+
+- [ ] **Rucksack s reguláciou podľa teploty** namiesto pevného limitu 50 % (s vypnutým turbom ≈ 550 MHz). Profil by mal cieľovú teplotu, napr. `"thermal_target_celsius": 72`, a výkon by sa podľa nej sám uberal a pridával.
+  - **Slučka:** každých 5–10 s prečíta teplotu CPU.
+    - Nad cieľom výkon o krok zníži, pod cieľom mínus hysterézia (napr. 65 °C) ho zvýši.
+    - Výkon sa drží v medziach, napr. 5–15 W alebo 400 MHz – plný výkon.
+    - Kroky musia byť pomalé, lebo notebook v taške mení teplotu pomaly a výkon by inak kmital.
+  - **Páka:** prednostne limit príkonu cez Intel RAPL (`/sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw`), lebo teplota závisí priamo od wattov a turbo môže ostať zapnuté. Záloha je `scaling_max_freq` so zapnutým turbom (rozsah 400 MHz – 5 GHz, takže zmizne problém s 550 MHz). Prepínanie power-saver/balanced je príliš hrubé.
+  - **Root:** slučka zapisuje často, takže `pkexec` nepripadá do úvahy. Potrebná je malá systémová služba `powerdeck-thermal` (root):
+    - od používateľa prijme len cieľovú teplotu cez helper (`set-thermal-target 55–90`, whitelist),
+    - nič z `$HOME` nečíta (pravidlá v `CLAUDE.md`),
+    - pri `restore`, odinštalovaní alebo páde vráti limity na predvolené.
+    - Pred mergom ide na security review a slučka dostane testy na simulovaných teplotách.
+  - **Alternatíva: thermald** s konfiguráciou pre profil. Je to menej kódu, ale na ThinkPadoch môže bežať v adaptívnom režime (DPTF) a konfigurácia sa s ním môže biť. Treba overiť na T14s.
+  - **Strážca ostáva ako poistka:** varovanie a pri kritickej teplote uspanie.
+  - **Pred kódom:**
+    1. Na notebooku overiť, že RAPL je zapisovateľný a firmvér ho neprepisuje.
+    2. Zmerať (`powerdeck monitor --csv` pri záťaži), koľko wattov v taške drží danú teplotu.
+    3. Potom návrh v plan mode a odsúhlasenie.
+
 ## 3. Otvorené otázky
 
 1. Verzia GNOME na Ubuntu 26.04 a dostupné gsettings kľúče
