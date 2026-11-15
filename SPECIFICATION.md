@@ -2,7 +2,32 @@
 
 > Zlúčenie dokumentov **RemoteStation** (pôvodný návod + nápad) a **PowerDeck** (výrobná špecifikácia).
 > Pracovný názov: RemoteStation · Výrobný názov: **PowerDeck** · Platforma: Ubuntu 26.04 / GNOME
-> Stav: **koncept / návrh – zatiaľ žiadny kód.** Položky označené ⚠️ treba overiť na reálnom stroji.
+> Stav: **v0.3, implementované** (pôvodne koncept). Sekcie 1–12 sú pôvodný návrh. Kde sa s ním niečo rozchádza, platí **zoznam rozhodnutí v sekcii 0**. Otvorené úlohy sú v `TODO.md`, pravidlá pre agentov v `CLAUDE.md`.
+
+## 0. Zoznam rozhodnutí (decision log)
+
+Najnovšie hore. Každé rozhodnutie: dátum · čo platí · prečo · kde v kóde. Keď sa rozhodnutie zmení, starý riadok sa neprepisuje, ale označí ako ~~nahradené~~ a pribudne nový.
+
+| Dátum | Rozhodnutie | Prečo | Kde |
+|---|---|---|---|
+| 2026-11-14 | **Root nikdy nekoná podľa ničoho, čo môže zapísať používateľ, bez whitelistu.** Odinštalovanie číta zálohy z `$HOME`, ale ako root spustí len príkazy presne v tvare `commands.allowed_as_root`; ostatné odmietne. Symlinky do adresára záloh od ne-roota sa odmietajú. Python ako root sa nespúšťa s cwd v `sys.path` (`-I`, `-P` + `cd /`). | Code review našlo, že root spúšťal príkazy zo záloh, ktoré môže prepísať ktorýkoľvek proces používateľa. | `helper.valid_args`, `commands.allowed_as_root`, `engine._symlinked_dir`, `scripts/uninstall-reset.sh`, `tests/test_reset_security.py`, `CLAUDE.md` |
+| 2026-11-14 | Odinštalovanie (`apt remove`, `install-helper.sh --uninstall`) vráti **všetky** nastavenia do stavu pred PowerDeckom. `apt upgrade` ich nevracia (prerm len pri `remove`). | Po odinštalovaní nesmie ostať ignorované veko ani strop CPU. | `scripts/uninstall-reset.sh`, `powerdeck reset-all` |
+| 2026-11-14 | Pri **kritickej teplote**: notifikácia, po 5 s uspanie. Ak uspanie blokuje aplikácia, použije sa `pkexec /usr/libexec/powerdeck-suspend` (vlastná polkit akcia, vie len uspať). Pri `warn`: len notifikácia. | Prechod na power-saver v ruksaku nestačil. Prešlo to tromi verziami: ~~power-saver~~, ~~podmienený power-saver~~ a teraz uspanie. | `guard.py`, `data/powerdeck-suspend`, polkit `io.github.powerdeck.thermal-suspend` |
+| 2026-11-14 | Vývoj bez admin hesla: rootless podman kontajner (testy, `.deb`, GUI screenshot). Veko, RDP, CPU, teplota a batéria sa testujú vo VM alebo na notebooku. | Na overenie nechceme stále zadávať heslo. | `scripts/dev-container.sh`, `container/` |
+| 2026-11-13 | **RDP so zavretým vekom:** profily RemoteWork, Travel a Rucksack majú `remote_access: true`, `lock_screen: false` a `blank_after_minutes: 0`. `powerdeck guard` hneď zruší šetrič obrazovky, ktorý GNOME zapne pri zavretí veka. Robustná cesta je **GNOME Remote Login** (systémový headless gnome-remote-desktop), zapína ho používateľ v Nastaveniach. (Voľba C.) | Keď je uspanie zablokované inhibítorom, gsd-power pri zavretí veka aktivuje šetrič. gnome-shell sa prepne do režimu `unlock-dialog` (`allowScreencast=false`) a zruší remote desktop. Samotné vypnutie zámku nepomáha. | `guard.watch_screensaver`, `profile.remote_access`, `builtin.py` |
+| 2026-11-13 | Nový kľúč `display.lock_screen` (bool, `org.gnome.desktop.screensaver lock-enabled`). Nedá sa kombinovať s `lock_after_minutes`. Default, BatterySaver a Max Performance majú zámok zapnutý. | Vzdialené profily ho musia vypnúť a ostatné ho vracajú. | `profile.py`, `backends.plan_display` |
+| 2026-11-13 | **Travel = len vypnuté turbo**, bez % limitu (`max_freq_percent: 100`). ~~Pôvodne 70 %.~~ | Pri vypnutom turbe kernel zníži `cpuinfo_max_freq` na základný takt (T14s: 1,1 GHz). % sa potom počíta z neho, takže 70 % by bolo 770 MHz. | `builtin.py` |
+| 2026-11-13 | Limit CPU 100 % = helper zapíše 100 GHz a kernel ho oreže na aktuálne maximum. | Hodnota zapísaná pri vypnutom turbe ostala ako trvalý strop (CPU zaseknuté na 1,1 GHz aj po `restore`). | `helper.set_max_percent` |
+| 2026-11-13 | Reload logind cez **HUP** stačí, reštart ani odhlásenie netreba (overené cez `busctl`). | Otvorená otázka 2 v sekcii 11. | `helper._reload_logind` |
+| 2026-11-13 | Profil **Gaming** premenovaný na **Max Performance**. „Návrat“ po skončení = `restore`. | Rozhodnutie vlastníka. | `builtin.py` |
+| 2026-11-13 | `restore` vráti aj aktívny profil na predošlý. Neúspešné `apply` (napr. zrušený alebo vypršaný pkexec) po sebe nenechá zálohu. pkexec má timeout 300 s. | Po `restore` ostával zastaraný `active.json` a po zlyhaní ostávala falošná záloha. | `engine.restore_last`, `runner.PKEXEC_TIMEOUT` |
+| 2026-11-13 | Vetvy: práca na worktree z `develop`, merge do `develop` až po otestovaní. `develop` → `main` je rozhodnutie vlastníka. | Prvé opravy išli priamo do `develop`. | `CLAUDE.md` |
+| 2026-11-12 | Pribudli profily **Travel**, **Rucksack** (najprísnejší: turbo off, max 50 %, power-saver, BT off, 70/82 °C) a **Presentation**. Sú už v1, nie v2+. | Hlavný scenár je notebook v taške. | `builtin.py` |
+| 2026-11-12 | Limit CPU (`cpu.turbo`, `cpu.max_freq_percent` 10–100) ide len cez root helper, iba whitelistované hodnoty. | Zápis do sysfs vyžaduje root. | `helper.py`, `cpu.py` |
+| 2026-11-12 | Úlohy profilu (`tasks`) sú **iba** `systemctl --user start\|stop\|restart UNIT`, validované pri načítaní. | Profil = kód. Žiadne ľubovoľné príkazy (pôvodný návrh v sekcii 6 ich mal). | `profile.py` |
+| 2026-11-12 | GTK4 + libadwaita appka + CLI. GNOME Shell extension len voliteľne po v1. Flatpak nie (sandbox bráni `nmcli` a `pkexec`). | Otvorená otázka 5. | — |
+
+**Čaká na rozhodnutie vlastníka:** limit 50 % v Rucksacku (s vypnutým turbom ≈ 550 MHz), redizajn GUI, licencia, maintainer v `.deb`. Celý zoznam je v sekcii 2 súboru `TODO.md`.
 
 ## 1. Zámer
 
@@ -145,14 +170,15 @@ sensors
 | Profil | Účel | Veko | Auto‑suspend | Wi‑Fi powersave | Power mode |
 |---|---|---|---|---|---|
 | **Default** | bezpečný denný režim, pôvodné hodnoty systému | suspend | zapnutý | default | balanced |
-| **RemoteWork** | cestovanie/práca mimo domova | ignore | vypnutý | off (pre vybrané siete) | balanced |
-| **Travel** | (variant RemoteWork) zameraný na ruksak: prísnejší thermal guard, USB tethering | ignore | vypnutý | off | balanced / power-saver pri prehriatí |
+| **RemoteWork** | cestovanie/práca mimo domova, SSH/RDP so zavretým vekom (bez zámku) | ignore | vypnutý | off (pre vybrané siete) | balanced |
+| **Travel** | (variant RemoteWork) zameraný na ruksak: turbo off, prísnejší thermal guard (80/88 °C) | ignore | vypnutý | off | power-saver |
+| **Rucksack** | notebook zavretý v taške: turbo off, max 50 %, BT off, 70/82 °C | ignore | vypnutý | off | power-saver |
 | **BatterySaver** | max. výdrž | suspend | zapnutý | on | power-saver, nižší jas, voliteľne vypnutý BT |
 | **Max Performance** | výkon, po skončení návrat na predošlý profil | suspend | zapnutý | default | performance |
 | **Presentation** | obrazovka nezhasína, bez uspania | – | vypnutý | default | balanced |
 | *vlastné* | používateľom vytvorené | | | | |
 
-**Prvá verzia (MVP):** `Default`, `RemoteWork`, `BatterySaver`, `Max Performance` + vlastné profily. `Travel` a `Presentation` neskôr.
+**Prvá verzia (MVP):** `Default`, `RemoteWork`, `BatterySaver`, `Max Performance` + vlastné profily. `Travel` a `Presentation` neskôr. *(Nahradené: v0.3 má všetky, aj Rucksack. Presné hodnoty sú v `powerdeck/builtin.py`, viď sekcia 0.)*
 
 ## 6. Formát profilu (zjednotený návrh)
 
@@ -199,6 +225,7 @@ sensors
 - Jasné varovanie pred rizikom prehriatia pri aktivácii RemoteWork/Travel.
 - Úlohy v profile = spúšťanie príkazov: zobraziť v diffe, importované profily nikdy nespúšťať automaticky.
 - Polkit akcie úzke a špecifické, žiadny generický „spusti ako root“.
+- Root nikdy nekoná podľa ničoho, čo môže zapísať používateľ (profily, zálohy, `$HOME`, premenné prostredia, argumenty), bez presného whitelistu. Každú zmenu kódu, ktorý beží ako root, treba pred mergom dať na security review. Podrobnosti sú v `CLAUDE.md`.
 - Pri nízkej batérii s ignorovaným vekom: upozornenie / automatický návrat na bezpečný profil (nastaviteľné).
 
 ## 9. Zobrazenie stavu (GUI)
@@ -218,12 +245,12 @@ Aktuálny profil · Wi‑Fi (SSID, powersave) · tethering/aktívne spojenie · 
 
 ## 11. Otvorené otázky
 
-1. Presná verzia GNOME na Ubuntu 26.04 a existencia kľúčov `lid-close-*-action`.
-2. Reštart vs. reload `systemd-logind` – čo je bezpečné pre bežiacu session?
-3. Spoľahlivosť RDP (`gnome-remote-desktop`) so zavretým vekom a zamknutou obrazovkou.
-4. HW používateľa (model notebooku): dostupnosť teplotných senzorov, `power-profiles-daemon` vs. TLP.
-5. Samostatná GTK appka vs. GNOME extension – rozhodnutie pre v1 (odporúčanie: GTK appka + CLI).
-6. Licencia a verejné/súkromné repo.
+1. Presná verzia GNOME na Ubuntu 26.04 a existencia kľúčov `lid-close-*-action`. *(Kľúče, ktoré appka používa, overené na HW; správanie veka rieši len logind.)*
+2. ~~Reštart vs. reload `systemd-logind`~~: HUP stačí (sekcia 0).
+3. Spoľahlivosť RDP (`gnome-remote-desktop`) so zavretým vekom a zamknutou obrazovkou. *(Príčina nájdená, riešenie v sekcii 0. Čaká sa na test so skutočne zavretým vekom.)*
+4. ~~HW používateľa~~: ThinkPad T14s Gen 4, intel_pstate, `power-profiles-daemon`, zóny `x86_pkg_temp`/`TCPU`, ventilátor cez `thinkpad` hwmon.
+5. ~~GTK appka vs. extension~~: GTK appka + CLI (sekcia 0).
+6. Licencia a verejné/súkromné repo. *(Otvorené.)*
 
 ## 12. Pôvod
 
