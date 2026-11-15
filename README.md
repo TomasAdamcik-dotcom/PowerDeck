@@ -50,6 +50,19 @@ scripts/dev-container.sh shell   # root shell inside the container
 
 Rootless podman: the repository is mounted read-only, `/sys` is read-only and there is no network, so nothing on the host changes. The container cannot test what needs a real GNOME session or hardware (lid, screensaver/RDP, CPU limits, thermal, battery) – use a VM or the laptop for that.
 
+## Test in a VM (GNOME, systemd, lid – no admin password)
+
+```bash
+scripts/dev-vm.sh create         # once: Ubuntu 26.04 cloud image + GNOME (~860 MB download, ~4 GB disk)
+scripts/dev-vm.sh start          # headless QEMU/KVM in the background (needs the kvm group)
+scripts/dev-vm.sh test           # copy the working tree, pytest, build + install the .deb in the VM
+scripts/dev-vm.sh lid close      # simulated lid switch (uinput SW_LID); "lid open" also wakes it from suspend
+scripts/dev-vm.sh ssh            # shell as "dev" (passwordless sudo and polkit – VM only)
+scripts/dev-vm.sh stop
+```
+
+The VM runs a real GNOME 50 Wayland session (auto-login), logind, polkit and systemd user services, so `pkexec`, the lid drop-in, the guard service and `apt remove` can be tested end to end. Limits: QEMU's display is a `Virtual` connector, which GNOME treats as an external monitor – gsd-power then blocks the lid switch itself, so the "lid closed → screensaver → RDP drops" path only happens on a real laptop (stop GNOME with `sudo systemctl isolate multi-user.target` to test logind alone). No battery, turbo or real Wi-Fi. After a suspend/resume the virtio GPU can hang the guest when GNOME restarts; then `kill` QEMU (`~/.local/share/powerdeck-vm/qemu.pid`) and `start` again.
+
 ## Remote desktop with the lid closed
 
 GNOME activates its screensaver when the lid closes (it does so instead of suspending, e.g. while an app such as Claude Desktop blocks suspend), and an active screensaver – locked or not – closes all **desktop sharing** RDP sessions and refuses new ones. Two ways around it:
