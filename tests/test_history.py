@@ -9,7 +9,9 @@ def test_append_and_read_back(tmp_path):
     f = tmp_path / "h" / "history.csv"
     history.append(Point(1000, 55.5, 2100, "Default"), f)
     history.append(Point(1020, None, None, ""), f)
-    assert f.read_text().splitlines()[0] == "ts,temp_c,freq_mhz,profile"
+    assert f.read_text().splitlines()[:2] == ["ts,temp_c,freq_mhz,profile", "1000,55.5,2100,Default"]
+    history.prune(f, now=1030)  # rewriting keeps the same format (no "2100.0")
+    assert f.read_text().splitlines()[1] == "1000,55.5,2100,Default"
     assert history.read(f) == [Point(1000, 55.5, 2100, "Default"), Point(1020, None, None, "")]
     assert history.read(f, since=1010) == [Point(1020, None, None, "")]
 

@@ -57,8 +57,8 @@ def append(p: Point, path: Path | None = None) -> None:
         w = csv.writer(f)
         if new:
             w.writerow(FIELDS)
-        w.writerow([f"{p.ts:.0f}", "" if p.temp_c is None else p.temp_c,
-                    "" if p.freq_mhz is None else p.freq_mhz, p.profile])
+        w.writerow([f"{p.ts:.0f}", "" if p.temp_c is None else f"{p.temp_c:g}",
+                    "" if p.freq_mhz is None else f"{p.freq_mhz:g}", p.profile])
 
 
 def _num(s: str) -> float | None:
