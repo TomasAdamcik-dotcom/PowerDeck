@@ -325,6 +325,17 @@ def test_guard_low_battery_suspends_once(monkeypatch):
     assert ["systemctl", "suspend"] not in f.calls
 
 
+def test_guard_low_battery_rearms_only_after_recovery():
+    p = BY["Rucksack"]
+    st, ev = guard.evaluate(50, 15, "Discharging", p, guard.GuardState()); assert ev == ["low_battery"]
+    for pct, state in ((None, "Discharging"), (14, "Unknown"), (17, "Discharging"), (14, "Discharging")):
+        st, ev = guard.evaluate(50, pct, state, p, st)
+        assert ev == [] and st.low_battery_notified, (pct, state)   # odd readings after resume: no loop
+    st, ev = guard.evaluate(50, 14, "Charging", p, st); assert ev == [] and not st.low_battery_notified
+    st, ev = guard.evaluate(50, 14, "Discharging", p, st); assert ev == ["low_battery"]  # unplugged again
+    st, ev = guard.evaluate(50, 19, "Discharging", p, st); assert not st.low_battery_notified
+
+
 def test_guard_suspend_falls_back_to_helper_when_inhibited(monkeypatch, tmp_path):
     helper_path = tmp_path / "powerdeck-suspend"
     helper_path.write_text("#!/bin/sh\n"); helper_path.chmod(0o755)

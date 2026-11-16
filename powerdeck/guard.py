@@ -21,6 +21,8 @@ from .status import read_status, thermal_level
 log = logging.getLogger(__name__)
 
 LOW_BATTERY_PERCENT = 15
+LOW_BATTERY_REARM = 3  # % above the threshold before a low battery suspends again
+ON_POWER_STATES = ("Charging", "Full", "Not charging")  # kernel power_supply status on AC
 # One reading at the critical temperature is not enough to suspend: a load spike (turbo burst
 # before the thermal regulation reacts) reached 84 °C for a few seconds in the bag test and
 # suspended a laptop that was meant to stay reachable. The guard confirms with a second
@@ -59,7 +61,11 @@ def evaluate(temp, battery_pct, battery_state, profile: Profile | None, state: G
            and battery_state == "Discharging")
     if low and not state.low_battery_notified:
         events.append("low_battery")
-    new.low_battery_notified = bool(low)
+    # Re-arm only on clear evidence (power plugged in or charged a bit), not on one odd reading
+    # (None or "Unknown" right after resume), or the laptop would be suspended again and again.
+    recovered = (battery_state in ON_POWER_STATES or
+                 (battery_pct is not None and battery_pct > LOW_BATTERY_PERCENT + LOW_BATTERY_REARM))
+    new.low_battery_notified = bool(low) or (state.low_battery_notified and not recovered)
     return new, events
 
 
