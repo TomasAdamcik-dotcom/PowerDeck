@@ -503,3 +503,81 @@ def test_guard_poll_restarts_rdp_only_for_remote_profiles(monkeypatch, tmp_path)
         for _ in range(2):
             st = guard.run_once(st, host, {p.name: p for p in BUILTIN_PROFILES})
         assert host.restarts == want, name
+
+
+# -- top-bar icon -------------------------------------------------------------
+import pathlib  # noqa: E402
+
+from powerdeck import tray  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _tray(active="Travel", calls=None):
+    calls = [] if calls is None else calls
+    t = tray.Tray(lambda: (["Default", "Travel"], active), lambda: calls.append("open"),
+                  lambda n: calls.append(("profile", n)), lambda: calls.append("restore"),
+                  lambda: calls.append("quit"))
+    return t, calls
+
+
+def test_tray_menu_lists_profiles_with_the_active_one_checked():
+    items = tray.menu_items(["Default", "Travel"], "Travel")
+    labels = [p.get("label") for _i, p in items]
+    assert labels[0] == tray._("Open PowerDeck") and labels[-1] == tray._("Quit PowerDeck")
+    radios = {p["label"]: p["toggle-state"] for _i, p in items if p.get("toggle-type") == "radio"}
+    assert radios == {"Default": 0, "Travel": 1}
+    restore = next(p for i, p in items if i == tray.RESTORE_ID)
+    assert restore["enabled"] is True
+    assert next(p for i, p in tray.menu_items(["Default"], None) if i == tray.RESTORE_ID)["enabled"] is False
+
+
+def test_tray_layout_is_valid_dbusmenu():
+    t, _calls = _tray()
+    rev, (root, props, children) = t.layout().unpack()
+    assert root == 0 and props["children-display"] == "submenu" and len(children) == 7
+    ids = [c[0] for c in children]
+    assert len(set(ids)) == len(ids) and all(i > 0 for i in ids)   # separators get ids too
+    assert t.layout().get_type_string() == "(u(ia{sv}av))"
+
+
+def test_tray_clicks_reach_the_app(monkeypatch):
+    monkeypatch.setattr(tray.GLib, "idle_add", lambda fn, *a: fn(*a))
+    t, calls = _tray()
+    t.layout()                                      # menu shown: profiles known
+    for item in (tray.OPEN_ID, tray.PROFILE_BASE + 1, tray.RESTORE_ID, tray.QUIT_ID, 10_001, 999):
+        t.clicked(item)
+    assert calls == ["open", ("profile", "Travel"), "restore", "quit"]   # separator / unknown: nothing
+
+
+def test_tray_title_shows_the_active_profile():
+    t, _ = _tray("Rucksack")
+    assert t._item_prop(None, None, None, None, "Title").unpack() == "PowerDeck — Rucksack"
+    assert t._item_prop(None, None, None, None, "Menu").unpack() == tray.MENU_PATH
+    assert t._item_prop(None, None, None, None, "ItemIsMenu").unpack() is False   # click = open
+
+
+def test_tray_without_a_watcher_is_off():
+    class Bus:
+        def call_sync(self, *a):
+            return tray.GLib.Variant("(b)", (False,))
+    t, _ = _tray()
+    assert t.start(Bus()) is False                  # the app then quits on close as before
+
+
+def test_guard_starts_with_the_graphical_session():
+    unit = (ROOT / "data/powerdeck-guard.service").read_text()
+    assert "WantedBy=graphical-session.target" in unit and "ConditionUser=!@system" in unit
+    deb = (ROOT / "scripts/build-deb.sh").read_text()
+    assert "graphical-session.target.wants/powerdeck-guard.service" in deb
+    auto = (ROOT / "data/io.github.powerdeck.PowerDeck-autostart.desktop").read_text()
+    assert "Exec=powerdeck-gtk --background" in auto and "TryExec=powerdeck-gtk" in auto
+
+
+def test_active_profile_ignores_a_non_string(tmp_path):
+    f = tmp_path / "active.json"
+    for bad in ('{"profile": 5}', '{"profile": ["a"]}', '[1]', "{"):
+        f.write_text(bad)
+        assert engine.active_profile(f) is None
+    f.write_text('{"profile": "Travel"}')
+    assert engine.active_profile(f) == "Travel"
