@@ -524,7 +524,7 @@ def _tray(active="Travel", calls=None):
 def test_tray_menu_lists_profiles_with_the_active_one_checked():
     items = tray.menu_items(["Default", "Travel"], "Travel")
     labels = [p.get("label") for _i, p in items]
-    assert labels[0] == tray._("Open PowerDeck") and labels[-1] == tray._("Quit PowerDeck")
+    assert labels[0] == tray._("Open PowerDeck") and labels[-1] == tray._("Quit PowerDeck (back to Default)")
     radios = {p["label"]: p["toggle-state"] for _i, p in items if p.get("toggle-type") == "radio"}
     assert radios == {"Default": 0, "Travel": 1}
     restore = next(p for i, p in items if i == tray.RESTORE_ID)

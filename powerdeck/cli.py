@@ -6,6 +6,7 @@ import sys
 
 from . import engine, guard
 from .capture import capture_current
+from .describe import describe
 from .logs import setup_logging
 from .profile import load_profiles
 from .status import read_status
@@ -76,18 +77,25 @@ def main(argv=None) -> int:
     if a.name not in profiles:
         print(f"Unknown profile: {a.name}", file=sys.stderr)
         return 2
-    plan = engine.make_plan(profiles[a.name], previous=profiles.get(engine.active_profile() or ""))
-    print(plan.diff_text())
-    if profiles[a.name].remote_access:
+    p, previous = profiles[a.name], profiles.get(engine.active_profile() or "")
+    plan = engine.make_plan(p, previous=previous)
+    # switching undoes the previous profile first, then applies NAME on that clean state
+    undo = engine.pending_undo() if previous is None or previous.name != p.name else []
+    if undo:
+        print("Undo the active profile's changes:\n" + engine.undo_text(undo))
+        print(f"Then apply {p.name}:")
+        print("\n".join("• " + it.text for it in describe(p).items))
+    else:
+        print(plan.diff_text())
+    if p.remote_access:
         print("\n".join(guard.remote_access_notes()))
-    if a.cmd == "plan" or plan.empty:
+    if a.cmd == "plan" or (plan.empty and not undo):
         return 0
     if not a.yes and input("Apply? [y/N] ").strip().lower() != "y":
         return 1
-    errs = engine.apply_plan(plan)
+    errs = engine.switch_to(p, previous=previous)
     print("\n".join(errs) or "Applied.")
     return 1 if errs else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

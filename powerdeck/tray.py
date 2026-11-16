@@ -67,7 +67,7 @@ def menu_items(profiles: list[str], active: str | None) -> list[tuple[int, dict]
                                          "toggle-state": int(name == active)}))
     items += [(-2, {"type": "separator"}),
               (RESTORE_ID, {"label": _("Restore previous"), "enabled": active is not None}),
-              (QUIT_ID, {"label": _("Quit PowerDeck")})]
+              (QUIT_ID, {"label": _("Quit PowerDeck (back to Default)")})]
     return items
 
 

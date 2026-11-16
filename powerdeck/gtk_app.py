@@ -87,12 +87,19 @@ class MainWindow(Adw.ApplicationWindow):
 
         # with the top-bar icon, closing the window only hides it (the app keeps running)
         self.set_hide_on_close(getattr(app, "tray", None) is not None)
+        self.connect("close-request", self._on_close)
         self.connect("notify::visible", lambda *_a: self.get_visible() and self.refresh_status())
 
         self.refresh_status()
         self._select_active()
         GLib.timeout_add_seconds(STATUS_INTERVAL_S, self._tick)
         GLib.timeout_add_seconds(MONITOR_INTERVAL_S, self._monitor_tick)
+
+    def _on_close(self, _win) -> bool:
+        if self.get_hide_on_close() or engine.active_profile() in (None, "Default"):
+            return False
+        self.get_application().quit_to_default()  # quits once Default is back
+        return True
 
     # -- layout ---------------------------------------------------------------
     def _build_sidebar(self, header: Adw.HeaderBar) -> Adw.NavigationPage:
@@ -130,12 +137,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.apply_btn = Gtk.Button(label=_("Apply…"), css_classes=["suggested-action", "pill"],
                                     sensitive=False)
         self.apply_btn.connect("clicked", lambda *_a: self._confirm(self.selected))
-        remote = Gtk.Button(label=_("Enable Remote Work"), css_classes=["pill"])
-        remote.connect("clicked", lambda *_a: self._confirm(self._find("RemoteWork")))
-        restore = Gtk.Button(label=_("Restore previous"), css_classes=["pill"])
-        restore.connect("clicked", self._on_restore)
-        for b in (self.apply_btn, remote, restore):
-            box.append(b)
+        box.append(self.apply_btn)
         actions.add(box)
         return actions
 
@@ -324,24 +326,38 @@ class MainWindow(Adw.ApplicationWindow):
             return
         self._planning = True
         previous = self._find(engine.active_profile() or "")
-        _in_background(lambda: engine.make_plan(profile, previous=previous),
-                       lambda plan: self._ask_apply(profile, plan), self._planning_failed)
+
+        def prepare():
+            switching = previous is None or previous.name != profile.name
+            return engine.make_plan(profile, previous=previous), engine.pending_undo() if switching else []
+
+        _in_background(prepare, lambda r: self._ask_apply(profile, previous, *r), self._planning_failed)
 
     def _planning_failed(self, exc: Exception):
         self._planning = False
         self.error(_("Something went wrong"), str(exc))
 
-    def _ask_apply(self, profile, plan: engine.Plan):
+    def _ask_apply(self, profile, previous, plan: engine.Plan, undo: list):
+        """One confirmation for the whole switch: the previous profile's changes are undone,
+        then ``profile`` is applied on that clean state (engine.switch_to)."""
         self._planning = False
-        if plan.needs_admin and not backends.helper_installed():
+        needs_admin = plan.needs_admin or any(c.privileged for c in undo)
+        if needs_admin and not backends.helper_installed():
             self.error(_("Admin helper is not installed."),
                        _("Install it once with:") + "\n\nsudo scripts/install-helper.sh")
             return
-        if plan.empty:
+        if undo:
+            head = (_("Changes of “{}” are undone:").format(previous.name) if previous
+                    else _("Changes of the previous profile are undone:"))
+            body = (head + "\n\n" + engine.undo_text(undo) + "\n\n"
+                    + _("Then “{}” is applied:").format(profile.name) + "\n\n"
+                    + "\n".join("• " + it.text for it in describe(profile).items))
+        elif plan.empty:
             self.toast(_("No changes needed."))
             return
-        body = _("The following changes will be made:") + "\n\n" + plan.diff_text()
-        if plan.needs_admin:
+        else:
+            body = _("The following changes will be made:") + "\n\n" + plan.diff_text()
+        if needs_admin:
             body += "\n\n" + _("Administrator permission will be requested.")
         if profile.thermal_guard:
             body += "\n\n⚠ " + _("Overheating risk: do not keep the laptop in a closed bag for long.")
@@ -351,7 +367,7 @@ class MainWindow(Adw.ApplicationWindow):
         dlg.set_response_appearance("apply", Adw.ResponseAppearance.SUGGESTED)
         dlg.set_close_response("cancel")
         dlg.connect("response", lambda _d, r: r == "apply" and self._run(
-            lambda: engine.apply_plan(plan), _("Applied “{}”.").format(profile.name)))
+            lambda: engine.switch_to(profile, previous=previous), _("Applied “{}”.").format(profile.name)))
         dlg.present(self)
 
     def _on_restore(self, *_a):
@@ -392,6 +408,7 @@ class App(Adw.Application):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.tray: Tray | None = None
         self._tray_active: str | None = None
+        self._quitting = False
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -409,7 +426,7 @@ class App(Adw.Application):
 
     def _start_tray(self):
         data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-        tray = Tray(self._tray_state, self.activate, self._tray_profile, self._tray_restore, self.quit,
+        tray = Tray(self._tray_state, self.activate, self._tray_profile, self._tray_restore, self.quit_to_default,
                     icon_theme_path=data if os.path.isdir(data) else "")
         if tray.start():
             self.tray = tray
@@ -441,6 +458,31 @@ class App(Adw.Application):
 
     def _tray_restore(self):
         self._window()._on_restore()
+
+    def quit_to_default(self):
+        """Quitting PowerDeck puts the Default profile back (the owner's choice); without the
+        top-bar icon closing the window quits. Hiding the window to the icon changes nothing."""
+        if self._quitting:
+            return
+        active = engine.active_profile()
+        profiles = load_profiles()
+        default = next((p for p in profiles if p.name == "Default"), None)
+        if default is None or active in (None, "Default"):
+            self.quit()
+            return
+        self._quitting = True
+        previous = next((p for p in profiles if p.name == active), None)
+        _in_background(lambda: engine.switch_to(default, previous=previous),
+                       self._quit_done, lambda e: self._quit_done([str(e)]))
+
+    def _quit_done(self, errs):
+        self._quitting = False
+        if not errs:
+            self.quit()
+            return
+        win = self._window()  # stay running and say why, rather than quit half-restored
+        win.error(_("Default profile could not be restored"), "\n".join(errs))
+        win.refresh_status()
 
     def do_command_line(self, cmd):
         if "--background" not in cmd.get_arguments()[1:]:

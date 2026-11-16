@@ -110,10 +110,14 @@ def apply_plan(plan: Plan, run: Runner = system_runner,
             snap.unlink(missing_ok=True)
             return [error]
         log.info("applied: %s", c.describe())
+    _set_active(plan.profile, active_file)
+    return []
+
+
+def _set_active(name: str, active_file: Path | None) -> None:
     active = _active_file(active_file)
     active.parent.mkdir(parents=True, exist_ok=True)
-    active.write_text(json.dumps({"profile": plan.profile}))
-    return []
+    active.write_text(json.dumps({"profile": name}))
 
 
 def _revert(changes: list[Change], run: Runner) -> list[str]:
@@ -176,6 +180,48 @@ def restore_last(run: Runner = system_runner, backup_dir: Path | None = None,
         else:
             active.unlink(missing_ok=True)
     return errors
+
+
+def pending_undo(backup_dir: Path | None = None) -> list[Change]:
+    """What undoing every pending backup changes, one entry per setting, for the confirmation
+    text: ``old`` = the value from before PowerDeck (oldest backup), ``new`` = the value now
+    (newest backup). Unreadable backups are left out; ``switch_to`` reports them."""
+    merged: dict[tuple[str, str], Change] = {}
+    for f in _backup_files(backup_dir or paths.backups_dir()):
+        try:
+            _data, changes = _read_backup(f)
+        except (OSError, ValueError):
+            continue
+        for c in changes:
+            if not c.revert_argv:
+                continue
+            key = (c.backend, c.target)
+            merged[key] = replace(merged[key], new=c.new) if key in merged else c
+    return list(merged.values())
+
+
+def undo_text(changes: list[Change]) -> str:
+    return "\n".join("• " + _printable(f"{c.target}: {c.new} → {c.old}") for c in changes)
+
+
+def switch_to(p: Profile, run: Runner = system_runner, previous: Profile | None = None,
+              backup_dir: Path | None = None, active_file: Path | None = None) -> list[str]:
+    """One-click profile switch: undo every pending profile (newest first), then plan and apply
+    ``p`` on that clean state, so nothing the previous profile set stays behind.
+
+    Re-applying the profile that is already active only adds what changed since. If an undo
+    fails, ``p`` is not applied (the failed backup stays pending for ``restore``).
+    """
+    backup_dir = backup_dir or paths.backups_dir()
+    if previous is None or previous.name != p.name:
+        while _backup_files(backup_dir):
+            if errors := restore_last(run, backup_dir, active_file):
+                return errors
+    plan = make_plan(p, run, previous)
+    if plan.empty:  # nothing to change: no empty backup that `restore` would "undo"
+        _set_active(p.name, active_file)
+        return []
+    return apply_plan(plan, run, backup_dir, active_file)
 
 
 def _symlinked_dir(directory: Path) -> Path | None:
