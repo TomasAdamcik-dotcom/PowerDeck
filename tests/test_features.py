@@ -238,17 +238,31 @@ def test_remote_profiles_never_idle_blank_and_need_unlocked_screen():
 
 
 def test_read_remote_login():
-    out = ("Overall:\n\tUnit status: inactive\nRDP:\n\tStatus: disabled\n\tPort: 3389\n"
-           "VNC:\n\tStatus: enabled\n")
-    assert status.read_remote_login(lambda a: (0, out)) == "disabled"
-    assert status.read_remote_login(lambda a: (0, out.replace("disabled", "enabled", 1))) == "enabled"
-    assert status.read_remote_login(lambda a: (127, "")) is None
+    calls = []
+    def run(out, rc=0):
+        return lambda a: (calls.append(a), (rc, out))[1]
+    assert status.read_remote_login(run("enabled\n")) == "enabled"
+    assert status.read_remote_login(run("disabled\n", 1)) == "disabled"
+    assert status.read_remote_login(run("masked\n", 1)) == "disabled"
+    assert status.read_remote_login(run("not-found\n", 4)) is None
+    assert status.read_remote_login(run("", 127)) is None
+    assert calls[0] == ["systemctl", "is-enabled", "gnome-remote-desktop.service"]
+
+
+def test_remote_login_check_never_asks_for_a_password():
+    # grdctl --system re-runs itself via pkexec: an admin password dialog popped up during
+    # `powerdeck status` / `plan` (seen on the laptop while connected over RDP)
+    calls = []
+    run = lambda a: (calls.append(a), (0, "enabled\n"))[1]
+    status.read_status(run, remote_login=True)
+    guard.remote_access_notes(run)
+    assert calls and not any(c[0] in ("grdctl", "pkexec", "sudo") for c in calls)
 
 
 def test_remote_access_notes():
     def run(state, login):
-        return lambda a: ((0, state) if a[0] == "systemctl" else (1, "") if a[0] == "pgrep"
-                          else (0, f"RDP:\n\tStatus: {login}\n"))
+        return lambda a: ((0, login) if a[:2] == ["systemctl", "is-enabled"]
+                          else (0, state) if a[0] == "systemctl" else (1, ""))
     assert guard.remote_access_notes(run("active", "enabled")) == []
     notes = guard.remote_access_notes(run("inactive", "disabled"))
     assert len(notes) == 2 and "guard is not running" in notes[0] and "Remote Login" in notes[1]
@@ -338,12 +352,12 @@ def test_monitor_thermal_level_uses_active_profile_limits():
     assert status.profile_thermal_level(None, BY["Rucksack"]) == "unknown"
 
 
-def test_grdctl_only_queried_where_its_value_is_used(tmp_path):
+def test_remote_login_only_queried_where_its_value_is_used(tmp_path):
     calls = []
     run = lambda a: (calls.append(a), (1, ""))[1]
     status.read_status(run)
     guard.run_once(guard.GuardState(), run, _remote_profiles(tmp_path, "RemoteWork"))
-    assert calls and not any(c[0] == "grdctl" for c in calls)
-    s = status.read_status(lambda a: (0, "RDP:\n\tStatus: enabled\n") if a[0] == "grdctl" else (1, ""),
+    assert calls and not any(status.REMOTE_LOGIN_UNIT in c for c in calls)
+    s = status.read_status(lambda a: (0, "enabled\n") if status.REMOTE_LOGIN_UNIT in a else (1, ""),
                            remote_login=True)
     assert s.remote_login == "enabled"

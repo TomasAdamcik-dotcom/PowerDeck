@@ -69,7 +69,7 @@ def _count_lines(run: Runner, argv: list[str]) -> int:
 
 
 def read_status(run: Runner = system_runner, remote_login: bool = False) -> Status:
-    """``remote_login`` also asks grdctl (another subprocess, may need polkit); only `powerdeck status`
+    """``remote_login`` also asks systemctl about the Remote Login unit; only `powerdeck status`
     shows it, the GUI and the guard do not."""
     pct, state = read_battery()
     rc, out = run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"])
@@ -89,18 +89,23 @@ def read_status(run: Runner = system_runner, remote_login: bool = False) -> Stat
                   read_remote_login(run) if remote_login else None)
 
 
+REMOTE_LOGIN_UNIT = "gnome-remote-desktop.service"
+
+
 def read_remote_login(run: Runner) -> str | None:
-    """RDP status of the system-wide gnome-remote-desktop (headless "Remote Login")."""
-    rc, out = run(["grdctl", "--system", "status"])
-    if rc != 0:
-        return None
-    in_rdp = False
-    for line in out.splitlines():
-        if not line.startswith((" ", "\t")):
-            in_rdp = line.strip() == "RDP:"
-        elif in_rdp and line.strip().startswith("Status:"):
-            return line.split(":", 1)[1].strip()
-    return None
+    """Whether the system-wide gnome-remote-desktop (headless "Remote Login") is turned on.
+
+    Never ``grdctl --system status``: it re-runs itself through pkexec and asks for the admin
+    password. ``grdctl --system rdp enable|disable`` (and GNOME Settings) enable or disable the
+    system unit, which anyone may query.
+    """
+    rc, out = run(["systemctl", "is-enabled", REMOTE_LOGIN_UNIT])
+    state = out.strip().splitlines()[0].strip() if out.strip() else ""
+    if state == "enabled":
+        return "enabled"
+    if state in ("disabled", "masked"):
+        return "disabled"
+    return None  # not installed, or systemctl unavailable
 
 
 def read_wifi_powersave(run: Runner) -> str | None:
