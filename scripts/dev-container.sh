@@ -58,9 +58,10 @@ cmd_gui() {
     mkdir -p dist
     # keep-id: the container's "dev" user is you on the host, so it can write dist/
     run --user dev --userns=keep-id:uid=1001,gid=1001 -e GTK_A11Y=none -v "$SRC/dist:/out:Z" -- "$copy && \
-        dbus-run-session -- xvfb-run -a -s '-screen 0 1100x1500x24' \
-        python3 scripts/screenshot.py /out/container-gui.png --active RemoteWork --select Travel \
-        && echo 'gui: OK -> dist/container-gui.png'"
+        dbus-run-session -- xvfb-run -a -s '-screen 0 1100x1500x24' sh -c \
+        'python3 scripts/screenshot.py /out/container-gui.png --active RemoteWork --select Travel \
+        && python3 scripts/screenshot.py /out/container-history.png --active RemoteWork --select RemoteWork --history' \
+        && echo 'gui: OK -> dist/container-gui.png, dist/container-history.png'"
 }
 
 cmd_shell() { podman run --rm -it -v "$SRC:/repo:ro,Z" "$IMAGE" bash; }

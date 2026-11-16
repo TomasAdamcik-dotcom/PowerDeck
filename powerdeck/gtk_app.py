@@ -19,6 +19,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from . import backends, engine  # noqa: E402
 from .describe import Item, describe  # noqa: E402
 from .gtk_editor import ProfileEditor  # noqa: E402
+from .history_view import HistoryPanel  # noqa: E402
 from .gui_texts import COMPACT_CSS, MONITOR_HELP, MONITOR_ROWS, STATUS_HELP, STATUS_ROWS  # noqa: E402
 from .i18n import _  # noqa: E402
 from .logs import setup_logging  # noqa: E402
@@ -114,13 +115,19 @@ class MainWindow(Adw.ApplicationWindow):
         new_btn.connect("clicked", lambda *_a: self._edit(None))
         self.edit_btn = Gtk.Button(icon_name="document-edit-symbolic", tooltip_text=_("Edit"), sensitive=False)
         self.edit_btn.connect("clicked", lambda *_a: self._edit(self.selected))
+        self.history_btn = Gtk.ToggleButton(icon_name="powerdeck-history-symbolic",
+                                            tooltip_text=_("Temperature and frequency history"))
+        self.history_btn.connect("toggled", lambda b: self.history.toggle(b.get_active()))
         header.pack_start(new_btn)
         header.pack_start(self.edit_btn)
+        header.pack_start(self.history_btn)
         return Adw.NavigationPage(title=_("Profiles"), child=Gtk.ScrolledWindow(child=self.listbox))
 
     def _build_content(self) -> Adw.PreferencesPage:
         """Top to bottom: profile contents, actions, status, monitor."""
         content = Adw.PreferencesPage()
+        self.history = HistoryPanel()
+        content.add(self.history)
         self.info_group = Adw.PreferencesGroup(title=_("Profile contents"),
                                                description=_("Select a profile on the left to see what it changes."))
         self.info_rows = []
@@ -422,6 +429,9 @@ class App(Adw.Application):
             css.load_from_data(COMPACT_CSS, -1)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        if os.path.isdir(data):  # running from the source tree: the .deb installs icons to hicolor
+            Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(data)
         self._start_tray()
 
     def _start_tray(self):
