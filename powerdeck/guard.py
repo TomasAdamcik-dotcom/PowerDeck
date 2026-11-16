@@ -136,8 +136,8 @@ def remote_access_notes(run: Runner = system_runner) -> list[str]:
         notes.append("! The guard is not running, so closing the lid will drop RDP desktop sharing. "
                      "Start it: systemctl --user enable --now powerdeck-guard (or: powerdeck guard)")
     if read_remote_login(run) != "enabled":
-        notes.append("Tip: desktop sharing still drops once when the lid closes. GNOME Remote Login "
-                     "(headless RDP, see README) is not affected by the lid or the lock screen.")
+        notes.append("Tip: desktop sharing still drops once when the lid closes; reconnect right away. "
+                     "(GNOME Remote Login would avoid that, but see README: it can hang on a black screen.)")
     return notes
 
 
