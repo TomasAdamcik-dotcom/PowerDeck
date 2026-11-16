@@ -158,6 +158,21 @@ def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
     return state
 
 
+RDP_PORT = 3389
+
+
+def rdp_listening(run: Runner = system_runner) -> bool | None:
+    """Whether anything listens on the RDP port; None if ``ss`` could not tell.
+
+    gnome-remote-desktop with "Negotiate port" moves to 3390 when 3389 is busy at start, and
+    clients saved with 3389 then get "PC not found" (seen on the T14s, 2026-11-16).
+    """
+    rc, out = run(["ss", "-Htln", f"sport = :{RDP_PORT}"])
+    if rc != 0:
+        return None
+    return bool(out.strip())
+
+
 def remote_access_notes(run: Runner = system_runner) -> list[str]:
     """What still has to be in place for a remote_access profile to keep RDP reachable."""
     from .status import read_remote_login
@@ -168,6 +183,11 @@ def remote_access_notes(run: Runner = system_runner) -> list[str]:
     if not running:
         notes.append("! The guard is not running, so closing the lid will drop RDP desktop sharing. "
                      "Start it: systemctl --user enable --now powerdeck-guard (or: powerdeck guard)")
+    if rdp_listening(run) is False:
+        notes.append(f"! Nothing listens on the RDP port {RDP_PORT}, so remote desktop cannot connect. "
+                     "GNOME may have moved it to another port when this one was busy. Restart it: "
+                     "systemctl --user restart gnome-remote-desktop (and to keep the port: "
+                     "grdctl rdp disable-port-negotiation)")
     if read_remote_login(run) != "enabled":
         notes.append("Tip: desktop sharing still drops once when the lid closes; reconnect right away. "
                      "(GNOME Remote Login would avoid that, but see README: it can hang on a black screen.)")

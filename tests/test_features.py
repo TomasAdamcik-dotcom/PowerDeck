@@ -275,6 +275,24 @@ def test_remote_access_notes():
     assert not any("guard" in n for n in guard.remote_access_notes(manual))   # `powerdeck guard` by hand
 
 
+def test_remote_access_notes_warn_when_rdp_port_is_closed():
+    """gnome-remote-desktop had moved to 3390; the phone kept trying 3389 ("PC not found")."""
+    def run(listen):
+        def r(a):
+            if a[0] == "ss":
+                assert a == ["ss", "-Htln", "sport = :3389"]
+                return listen
+            return (0, "enabled") if a[:2] == ["systemctl", "is-enabled"] else (0, "active")
+        return r
+    listening = (0, "LISTEN 0 5 *:3389 *:*\n")
+    assert guard.rdp_listening(run(listening)) is True
+    assert guard.remote_access_notes(run(listening)) == []
+    notes = guard.remote_access_notes(run((0, "")))
+    assert len(notes) == 1 and "3389" in notes[0] and "restart gnome-remote-desktop" in notes[0]
+    assert guard.rdp_listening(run((127, ""))) is None
+    assert guard.remote_access_notes(run((127, ""))) == []      # no ss: no false alarm
+
+
 def test_guard_ignores_a_short_critical_spike():
     """Bag test 2026-11-16: one 84 °C reading at the start of a load suspended Rucksack."""
     p, st = BY["Rucksack"], guard.GuardState()          # critical 82 °C
