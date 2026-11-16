@@ -23,6 +23,48 @@ def _active_file(active_file: Path | None) -> Path:
     return active_file or paths.state_dir() / "active.json"
 
 
+# Back on Default the display keeps the brightness it had there last time: something outside
+# PowerDeck (GNOME after the logind reload?) set it to 50 % when switching back.
+DEFAULT = "Default"
+DEFAULT_BRIGHTNESS = 25        # when Default's last brightness is unknown
+BRIGHTNESS_SETTLE_S = 3.0      # keep checking this long: the jump can come a moment later
+BRIGHTNESS_POLL_S = 0.5
+
+
+def _brightness_file(active_file: Path | None) -> Path:
+    return _active_file(active_file).with_name("default-brightness.json")
+
+
+def _save_default_brightness(run: Runner, active_file: Path | None) -> None:
+    level = backends.read_brightness(run)
+    if level is not None:
+        f = _brightness_file(active_file)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"percent": level}))
+
+
+def _default_brightness(active_file: Path | None) -> int:
+    try:
+        level = json.loads(_brightness_file(active_file).read_text())["percent"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return DEFAULT_BRIGHTNESS
+    return level if isinstance(level, int) and 1 <= level <= 100 else DEFAULT_BRIGHTNESS
+
+
+def keep_brightness(run: Runner, percent: int, settle: float | None = None,
+                    sleep=time.sleep) -> None:
+    """Set the brightness to ``percent`` and put it back if it changes within ``settle`` s."""
+    settle = BRIGHTNESS_SETTLE_S if settle is None else settle
+    for i in range(int(settle / BRIGHTNESS_POLL_S) + 1):
+        level = backends.read_brightness(run)
+        if level is None:
+            return  # no backlight
+        if level != percent:
+            run(commands.brightness(percent))
+        if i * BRIGHTNESS_POLL_S < settle:
+            sleep(BRIGHTNESS_POLL_S)
+
+
 @dataclass
 class Plan:
     profile: str
@@ -213,15 +255,24 @@ def switch_to(p: Profile, run: Runner = system_runner, previous: Profile | None 
     fails, ``p`` is not applied (the failed backup stays pending for ``restore``).
     """
     backup_dir = backup_dir or paths.backups_dir()
-    if previous is None or previous.name != p.name:
+    switching = previous is None or previous.name != p.name
+    if switching and previous is not None and previous.name == DEFAULT:
+        _save_default_brightness(run, active_file)
+    if switching:
         while _backup_files(backup_dir):
             if errors := restore_last(run, backup_dir, active_file):
                 return errors
     plan = make_plan(p, run, previous)
     if plan.empty:  # nothing to change: no empty backup that `restore` would "undo"
         _set_active(p.name, active_file)
-        return []
-    return apply_plan(plan, run, backup_dir, active_file)
+        errors = []
+    else:
+        errors = apply_plan(plan, run, backup_dir, active_file)
+    # coming back from another profile (not the first apply, when nothing is known yet)
+    if previous is not None and switching and not errors and p.name == DEFAULT \
+            and "brightness_percent" not in p.display:
+        keep_brightness(run, _default_brightness(active_file))
+    return errors
 
 
 def _symlinked_dir(directory: Path) -> Path | None:
