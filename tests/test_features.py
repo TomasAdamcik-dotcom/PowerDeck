@@ -104,7 +104,9 @@ def test_guard_events_only_on_worsening():
     st, ev = guard.evaluate(70, 80, "Discharging", p, st); assert ev == []
     st, ev = guard.evaluate(86, 80, "Discharging", p, st); assert ev == ["warn"]
     st, ev = guard.evaluate(87, 80, "Discharging", p, st); assert ev == []      # no spam
-    st, ev = guard.evaluate(93, 80, "Discharging", p, st); assert ev == ["critical"]
+    st, ev = guard.evaluate(93, 80, "Discharging", p, st); assert ev == [] and st.critical_pending
+    st, ev = guard.evaluate(93, 80, "Discharging", p, st); assert ev == ["critical"]  # confirmed
+    st, ev = guard.evaluate(94, 80, "Discharging", p, st); assert ev == []      # suspended once, no loop
     st, ev = guard.evaluate(60, 80, "Discharging", p, st); assert ev == [] and st.thermal == "ok"
     st, ev = guard.evaluate(86, 80, "Discharging", p, st); assert ev == ["warn"]  # re-arms after cooling
     st, ev = guard.evaluate(60, 10, "Discharging", p, st); assert ev == ["low_battery"]
@@ -117,7 +119,10 @@ def test_guard_critical_notifies_then_suspends(monkeypatch):
     monkeypatch.setattr(guard.time, "sleep", lambda s: f.calls.append(["sleep", s]))
     monkeypatch.setattr(guard, "read_status", lambda run: status.Status(50, "Discharging", 95, None, None))
     monkeypatch.setattr(engine, "active_profile", lambda: "RemoteWork")
-    guard.run_once(guard.GuardState(), f, {"RemoteWork": BY["RemoteWork"]})
+    st = guard.run_once(guard.GuardState(), f, {"RemoteWork": BY["RemoteWork"]})
+    assert st.critical_pending and ["systemctl", "suspend"] not in f.calls   # first reading: confirm
+    f.calls.clear()
+    guard.run_once(st, f, {"RemoteWork": BY["RemoteWork"]})
     names = [c[0] for c in f.calls if c[0] in ("notify-send", "sleep", "systemctl")]
     assert names == ["notify-send", "sleep", "systemctl"]          # tell first, then wait, then sleep
     note = next(c for c in f.calls if c[0] == "notify-send")
@@ -268,6 +273,67 @@ def test_remote_access_notes():
     assert len(notes) == 2 and "guard is not running" in notes[0] and "Remote Login" in notes[1]
     manual = lambda a: (0, "inactive") if a[0] == "systemctl" else (0, "123") if a[0] == "pgrep" else (0, "")
     assert not any("guard" in n for n in guard.remote_access_notes(manual))   # `powerdeck guard` by hand
+
+
+def test_guard_ignores_a_short_critical_spike():
+    """Bag test 2026-11-16: one 84 °C reading at the start of a load suspended Rucksack."""
+    p, st = BY["Rucksack"], guard.GuardState()          # critical 82 °C
+    st, ev = guard.evaluate(84, 99, "Discharging", p, st)
+    assert ev == ["warn"] and st.critical_pending       # notified, not suspended
+    st, ev = guard.evaluate(70, 99, "Discharging", p, st)
+    assert ev == [] and not st.critical_pending and st.thermal == "warn"
+    st, ev = guard.evaluate(84, 99, "Discharging", p, st)
+    assert ev == [] and st.critical_pending             # a new spike needs a new confirmation
+
+
+def test_guard_suspends_at_once_far_above_critical():
+    p = BY["Rucksack"]
+    _, ev = guard.evaluate(82 + guard.CRITICAL_IMMEDIATE_MARGIN, 99, "Discharging", p, guard.GuardState())
+    assert ev == ["critical"]
+    _, ev = guard.evaluate(82 + guard.CRITICAL_IMMEDIATE_MARGIN - 1, 99, "Discharging", p, guard.GuardState())
+    assert ev == ["warn"]
+
+
+def test_guard_low_battery_only_on_battery_in_lid_ignore_profiles():
+    for name in ("RemoteWork", "Travel", "Rucksack"):
+        _, ev = guard.evaluate(50, guard.LOW_BATTERY_PERCENT, "Discharging", BY[name], guard.GuardState())
+        assert ev == ["low_battery"], name
+    for name in ("Default", "BatterySaver", "Presentation", "Max Performance"):
+        _, ev = guard.evaluate(50, 5, "Discharging", BY[name], guard.GuardState())
+        assert "low_battery" not in ev, name
+    p = BY["Rucksack"]
+    for pct, state in ((16, "Discharging"), (10, "Charging"), (10, "Fully charged"), (None, "Discharging")):
+        _, ev = guard.evaluate(50, pct, state, p, guard.GuardState())
+        assert ev == [], (pct, state)
+    _, ev = guard.evaluate(50, 10, "Discharging", None, guard.GuardState())
+    assert ev == []                                     # no PowerDeck profile active
+
+
+def test_guard_low_battery_suspends_once(monkeypatch):
+    f = Fake()
+    monkeypatch.setattr(guard.time, "sleep", lambda s: f.calls.append(["sleep", s]))
+    monkeypatch.setattr(guard, "read_status", lambda run: status.Status(15, "Discharging", 50, None, None))
+    monkeypatch.setattr(engine, "active_profile", lambda: "Rucksack")
+    profiles = {"Rucksack": BY["Rucksack"]}
+    st = guard.run_once(guard.GuardState(), f, profiles)
+    names = [c[0] for c in f.calls if c[0] in ("notify-send", "sleep", "systemctl")]
+    assert names == ["notify-send", "sleep", "systemctl"] and ["systemctl", "suspend"] in f.calls
+    note = next(c for c in f.calls if c[0] == "notify-send")
+    assert "battery low" in note[-2] and "15 %" in note[-1]
+    f.calls.clear()
+    guard.run_once(st, f, profiles)                     # woken up by the user at 15 %: stay awake
+    assert ["systemctl", "suspend"] not in f.calls
+
+
+def test_guard_low_battery_rearms_only_after_recovery():
+    p = BY["Rucksack"]
+    st, ev = guard.evaluate(50, 15, "Discharging", p, guard.GuardState()); assert ev == ["low_battery"]
+    for pct, state in ((None, "Discharging"), (14, "Unknown"), (17, "Discharging"), (14, "Discharging")):
+        st, ev = guard.evaluate(50, pct, state, p, st)
+        assert ev == [] and st.low_battery_notified, (pct, state)   # odd readings after resume: no loop
+    st, ev = guard.evaluate(50, 14, "Charging", p, st); assert ev == [] and not st.low_battery_notified
+    st, ev = guard.evaluate(50, 14, "Discharging", p, st); assert ev == ["low_battery"]  # unplugged again
+    st, ev = guard.evaluate(50, 19, "Discharging", p, st); assert not st.low_battery_notified
 
 
 def test_guard_suspend_falls_back_to_helper_when_inhibited(monkeypatch, tmp_path):

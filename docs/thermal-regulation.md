@@ -22,7 +22,10 @@ Actuator, first one available:
 
 1. **RAPL** (`/sys/class/powercap/intel-rapl:0` and `intel-rapl-mmio:0`, package domains): the
    long-term (PL1) and short-term (PL2) power limits. Both are lowered, so the cap acts at once
-   instead of over the 128 s PL1 averaging window. Floor 5 W.
+   instead of over the 128 s PL1 averaging window. Floor 5 W. PL2 is also never above the PL1
+   now in effect in the same domain (even at level 1.0): with power-saver the MMIO PL1 is 11 W
+   but PL2 stayed 55 W, and in the bag test that turbo burst reached 84 °C in seconds, before
+   the controller could react, so the guard suspended the laptop.
 2. **scaling_max_freq** of every core (AMD or anything without writable RAPL). Floor
    `scaling_min_freq`.
 

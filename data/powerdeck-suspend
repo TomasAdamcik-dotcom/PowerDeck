@@ -1,5 +1,6 @@
 #!/bin/sh
-# PowerDeck thermal suspend: run by the guard via pkexec when the CPU reached the profile's
-# critical temperature and a plain `systemctl suspend` was blocked by an inhibitor.
+# PowerDeck guard suspend: run by the guard via pkexec when the CPU reached the profile's
+# critical temperature, or the battery is low on a lid-ignore profile, and a plain
+# `systemctl suspend` was blocked by an inhibitor.
 # Takes no arguments and can do nothing but suspend.
 exec /usr/bin/systemctl suspend --ignore-inhibitors

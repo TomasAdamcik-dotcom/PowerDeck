@@ -195,9 +195,11 @@ def _thermal_guard(p: Profile) -> list[Item]:
     text = _("Thermal guard: notification at {} °C; at {} °C it notifies and suspends the laptop")
     return [Item(
         text.format(tg["warn_celsius"], tg["critical_celsius"]), [cmd.ENABLE_GUARD],
-        _("The guard service runs `powerdeck guard`. At the critical temperature it sends a "
-          "notification, waits 5 s and runs `systemctl suspend` (if an app blocks sleep: "
-          "pkexec /usr/libexec/powerdeck-suspend, which ignores inhibitors). Enable it once."))]
+        _("The guard service runs `powerdeck guard`. At the critical temperature (confirmed by a "
+          "second reading 10 s later) it sends a notification, waits 5 s and runs `systemctl "
+          "suspend` (if an app blocks sleep: pkexec /usr/libexec/powerdeck-suspend, which ignores "
+          "inhibitors). If the profile keeps the laptop awake with the lid closed, it also "
+          "suspends it at 15 % battery when not charging. Enable it once."))]
 
 
 def _tasks(p: Profile) -> list[Item]:
