@@ -13,3 +13,7 @@ def no_host_cpu(monkeypatch, tmp_path):
     # ... nor touch the user's real state/config (active.json, backups, logs, profiles)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    # ... nor on its language: tests check the English texts (the owner's desktop is Slovak)
+    for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("LANG", "C.UTF-8")
