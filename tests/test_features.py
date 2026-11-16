@@ -445,3 +445,61 @@ def test_remote_login_only_queried_where_its_value_is_used(tmp_path):
     s = status.read_status(lambda a: (0, "enabled\n") if status.REMOTE_LOGIN_UNIT in a else (1, ""),
                            remote_login=True)
     assert s.remote_login == "enabled"
+
+
+class RdpHost:
+    """ss / gsettings / systemctl --user restart for gnome-remote-desktop."""
+    def __init__(self, listening=False, enabled="true"):
+        self.listening, self.enabled, self.restarts = listening, enabled, 0
+
+    def __call__(self, a):
+        if a[0] == "ss":
+            return 0, "LISTEN 0 5 *:3389 *:*\n" if self.listening else ""
+        if a[:2] == ["gsettings", "get"]:
+            assert a[2:] == ["org.gnome.desktop.remote-desktop.rdp", "enable"]
+            return 0, self.enabled + "\n"
+        if a == ["systemctl", "--user", "restart", "gnome-remote-desktop"]:
+            self.restarts += 1
+            return 0, ""
+        raise AssertionError(a)
+
+
+def test_guard_restarts_rdp_when_port_closed():
+    host, st = RdpHost(), guard.GuardState()
+    assert not guard.keep_rdp_listening(host, st, 0)        # one closed poll: maybe still starting
+    assert guard.keep_rdp_listening(host, st, 30) and host.restarts == 1
+    assert not guard.keep_rdp_listening(host, st, 60)       # give it time to come up
+    assert guard.keep_rdp_listening(host, st, 30 + guard.RDP_RESTART_EVERY_S) and host.restarts == 2
+    host.listening = True
+    assert not guard.keep_rdp_listening(host, st, 2000) and st.rdp_restarts == 0
+
+
+def test_guard_rdp_restart_gives_up_and_respects_disabled_sharing():
+    host, st = RdpHost(), guard.GuardState()
+    for i in range(20):
+        guard.keep_rdp_listening(host, st, i * guard.RDP_RESTART_EVERY_S)
+    assert host.restarts == guard.RDP_MAX_RESTARTS             # no endless restart loop
+    off = RdpHost(enabled="false")
+    st = guard.GuardState()
+    for i in range(5):
+        guard.keep_rdp_listening(off, st, i * guard.RDP_RESTART_EVERY_S)
+    assert off.restarts == 0                                     # sharing turned off on purpose
+    assert not guard.keep_rdp_listening(lambda a: (127, ""), guard.GuardState(), 0)  # no ss
+
+
+def test_guard_state_survives_evaluate():
+    st = guard.GuardState(rdp_closed_ticks=1, rdp_restarts=2, rdp_last_restart=5.0)
+    new, _ = guard.evaluate(50, 80, "Discharging", BY["Rucksack"], st)
+    assert (new.rdp_closed_ticks, new.rdp_restarts, new.rdp_last_restart) == (1, 2, 5.0)
+
+
+def test_guard_poll_restarts_rdp_only_for_remote_profiles(monkeypatch, tmp_path):
+    monkeypatch.setattr(guard, "read_status", lambda run: status.Status(80, "Discharging", 50, None, None))
+    monkeypatch.setattr(guard, "dismiss_screensaver", lambda run: False)
+    for name, want in (("Rucksack", 1), ("Default", 0)):
+        monkeypatch.setattr(engine, "active_profile", lambda n=name: n)
+        host = RdpHost()
+        st = guard.GuardState()
+        for _ in range(2):
+            st = guard.run_once(st, host, {p.name: p for p in BUILTIN_PROFILES})
+        assert host.restarts == want, name

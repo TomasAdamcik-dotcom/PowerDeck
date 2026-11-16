@@ -10,7 +10,7 @@ import os
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import commands, engine
 from .profile import Profile, load_profiles
@@ -37,6 +37,9 @@ class GuardState:
     thermal: str = "ok"
     low_battery_notified: bool = False
     critical_pending: bool = False  # one critical reading seen, waiting for a confirming one
+    rdp_closed_ticks: int = 0       # consecutive polls with nothing listening on the RDP port
+    rdp_restarts: int = 0           # restarts since the port was last seen open
+    rdp_last_restart: float | None = None
 
 
 def evaluate(temp, battery_pct, battery_state, profile: Profile | None, state: GuardState):
@@ -46,7 +49,7 @@ def evaluate(temp, battery_pct, battery_state, profile: Profile | None, state: G
     battery (RemoteWork, Travel, Rucksack); elsewhere GNOME's own power settings apply.
     """
     events: list[str] = []
-    new = GuardState(state.thermal, state.low_battery_notified)
+    new = replace(state, critical_pending=False)
     if profile is not None and profile.thermal_guard:
         tg = profile.thermal_guard
         level = thermal_level(temp, tg["warn_celsius"], tg["critical_celsius"])
@@ -147,6 +150,8 @@ def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
         dismiss_screensaver(run)  # fallback for a missed ActiveChanged signal
     s = read_status(run)
     state, events = evaluate(s.cpu_temp_c, s.battery_percent, s.battery_state, prof, state)
+    if prof is not None and prof.remote_access:
+        keep_rdp_listening(run, state, time.monotonic())
     for ev in events:
         if ev == "warn":
             _notify(run, _("PowerDeck: CPU is hot"),
@@ -171,6 +176,37 @@ def rdp_listening(run: Runner = system_runner) -> bool | None:
     if rc != 0:
         return None
     return bool(out.strip())
+
+
+RDP_RESTART_EVERY_S = 600  # gnome-remote-desktop needs ~25 s to listen again after a restart
+RDP_MAX_RESTARTS = 3       # then stop trying until the port is seen open again
+
+
+def keep_rdp_listening(run: Runner, state: GuardState, now: float) -> bool:
+    """Restart gnome-remote-desktop when nothing listens on the RDP port; True if restarted.
+
+    In the bag nobody sees the "apply" warning, only "PC not found" on the phone. Needs two
+    closed polls in a row (the daemon starts listening ~25 s after login), RDP sharing turned
+    on in GNOME, and at most RDP_MAX_RESTARTS tries RDP_RESTART_EVERY_S apart.
+    """
+    listening = rdp_listening(run)
+    if listening is not False:
+        if listening:
+            state.rdp_closed_ticks = state.rdp_restarts = 0
+        return False
+    state.rdp_closed_ticks += 1
+    if (state.rdp_closed_ticks < 2 or state.rdp_restarts >= RDP_MAX_RESTARTS
+            or (state.rdp_last_restart is not None and now - state.rdp_last_restart < RDP_RESTART_EVERY_S)):
+        return False
+    rc, out = run(["gsettings", "get", "org.gnome.desktop.remote-desktop.rdp", "enable"])
+    if rc != 0 or out.strip() != "true":
+        return False  # desktop sharing is off on purpose: nothing to keep reachable
+    run(["systemctl", "--user", "restart", "gnome-remote-desktop"])
+    state.rdp_restarts += 1
+    state.rdp_last_restart = now
+    log.warning("nothing listened on RDP port %s: restarted gnome-remote-desktop (%s/%s)",
+                RDP_PORT, state.rdp_restarts, RDP_MAX_RESTARTS)
+    return True
 
 
 def remote_access_notes(run: Runner = system_runner) -> list[str]:

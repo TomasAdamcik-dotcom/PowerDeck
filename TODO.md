@@ -105,7 +105,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
   - **Oprava (vetva `bag-remote-work`):** PL2 ≤ PL1, strážca uspí až po potvrdení druhým meraním o 10 s, pri ≤ 15 % batérie bez nabíjania uspí (RemoteWork, Travel, Rucksack). Testy ✓.
     - [x] Notebook 2026-11-16: cieľ 65 °C + power-saver → MMIO PL1/PL2 11/11 W (predtým 11/55). 12 jadier 40 s na stole: najviac 54 °C, žiadny skok na štarte (predtým 82–94 °C). `restore` → 30/55 W, služba zastavená ✓.
     - [x] Taška 2026-11-16 12:33–12:45, batéria, 12 jadier 10 min: 46 → 65 °C bez skoku, potom 65–66 °C pri 9,4–11 W, strážca ani raz nezasiahol, RDP pripojené od 12:39 do konca, `restore` ✓.
-    - [x] **RDP port:** používateľský gnome-remote-desktop („Negotiate port: yes“) od 12. 11. počúval na **3390**, lebo 3389 bol pri štarte obsadený; telefón sa pripájal na 3389 a dostal RST („nenájde PC“, aj v prvom teste v taške). Pomohol `systemctl --user restart gnome-remote-desktop`. Hotovo: `apply` upozorní, keď na 3389 nič nepočúva; na T14s `grdctl rdp disable-port-negotiation`.
+    - [x] **RDP port:** používateľský gnome-remote-desktop („Negotiate port: yes“) od 12. 11. počúval na **3390**, lebo 3389 bol pri štarte obsadený; telefón sa pripájal na 3389 a dostal RST („nenájde PC“, aj v prvom teste v taške). Pomohol `systemctl --user restart gnome-remote-desktop`. Hotovo: `apply` upozorní, keď na 3389 nič nepočúva; na T14s `grdctl rdp disable-port-negotiation`. Strážca navyše RDP sám reštartuje (overené na T14s: po zastavení služby počúva znova o ~10 s).
     - [ ] Uspanie pri 15 %: dočasne vyskúšať s vyšším prahom alebo počkať na vybitie.
   - **Slučka:** každých 5–10 s prečíta teplotu CPU.
     - Nad cieľom výkon o krok zníži, pod cieľom mínus hysterézia (napr. 65 °C) ho zvýši.
