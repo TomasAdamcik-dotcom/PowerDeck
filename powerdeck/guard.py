@@ -21,6 +21,12 @@ from .status import read_status, thermal_level
 log = logging.getLogger(__name__)
 
 LOW_BATTERY_PERCENT = 15
+# One reading at the critical temperature is not enough to suspend: a load spike (turbo burst
+# before the thermal regulation reacts) reached 84 °C for a few seconds in the bag test and
+# suspended a laptop that was meant to stay reachable. The guard confirms with a second
+# reading CONFIRM_INTERVAL_S later, unless the first one is already this far above critical.
+CRITICAL_IMMEDIATE_MARGIN = 8
+CONFIRM_INTERVAL_S = 10
 _RANK = {"unknown": 0, "ok": 0, "warn": 1, "critical": 2}
 
 
@@ -28,15 +34,23 @@ _RANK = {"unknown": 0, "ok": 0, "warn": 1, "critical": 2}
 class GuardState:
     thermal: str = "ok"
     low_battery_notified: bool = False
+    critical_pending: bool = False  # one critical reading seen, waiting for a confirming one
 
 
 def evaluate(temp, battery_pct, battery_state, profile: Profile | None, state: GuardState):
-    """Return (new_state, [events]); events: warn / critical / low_battery."""
+    """Return (new_state, [events]); events: warn / critical / low_battery.
+
+    low_battery fires only for profiles that keep the laptop awake with the lid closed on
+    battery (RemoteWork, Travel, Rucksack); elsewhere GNOME's own power settings apply.
+    """
     events: list[str] = []
     new = GuardState(state.thermal, state.low_battery_notified)
     if profile is not None and profile.thermal_guard:
         tg = profile.thermal_guard
         level = thermal_level(temp, tg["warn_celsius"], tg["critical_celsius"])
+        if (level == "critical" and state.thermal != "critical" and not state.critical_pending
+                and temp < tg["critical_celsius"] + CRITICAL_IMMEDIATE_MARGIN):
+            level, new.critical_pending = "warn", True  # confirm on the next reading
         if _RANK[level] > _RANK[state.thermal]:
             events.append(level)
         new.thermal = level
@@ -87,23 +101,38 @@ def suspend_now(run: Runner) -> bool:
         rc, out = run(["pkexec", SUSPEND_HELPER])
         if rc == 0:
             return True
-    log.error("thermal suspend failed: %s", out)
+    log.error("suspend failed: %s", out)
+    return False
+
+
+def _suspend_after_notice(run: Runner, title: str, body: str, failed: str, sleep=None) -> bool:
+    _notify(run, title, body, True)
+    (sleep or time.sleep)(SUSPEND_DELAY_S)
+    if suspend_now(run):
+        return True
+    _notify(run, _("PowerDeck: could not suspend"), failed, True)
     return False
 
 
 def critical_reaction(run: Runner, temp: float | None, critical: float, sleep=None) -> bool:
     """Maximum temperature reached: tell the user why, then suspend. Returns True if suspended."""
     t = "?" if temp is None else f"{temp:.0f}"
-    _notify(run, _("PowerDeck: suspending – maximum temperature reached"),
-            _("CPU reached {} °C (maximum allowed {} °C). The laptop will be suspended in {} s "
-              "to protect the hardware.").format(t, f"{critical:.0f}", SUSPEND_DELAY_S), True)
-    (sleep or time.sleep)(SUSPEND_DELAY_S)
     log.info("suspending: CPU %s °C >= critical %s °C", t, critical)
-    if suspend_now(run):
-        return True
-    _notify(run, _("PowerDeck: could not suspend"),
-            _("CPU is at {} °C. Shut the laptop down or take it out of the bag now.").format(t), True)
-    return False
+    return _suspend_after_notice(
+        run, _("PowerDeck: suspending – maximum temperature reached"),
+        _("CPU reached {} °C (maximum allowed {} °C). The laptop will be suspended in {} s "
+          "to protect the hardware.").format(t, f"{critical:.0f}", SUSPEND_DELAY_S),
+        _("CPU is at {} °C. Shut the laptop down or take it out of the bag now.").format(t), sleep)
+
+
+def low_battery_reaction(run: Runner, percent, sleep=None) -> bool:
+    """Battery low on a lid-ignore profile: suspend before it runs flat. Returns True if suspended."""
+    log.info("suspending: battery %s %% <= %s %%, discharging", percent, LOW_BATTERY_PERCENT)
+    return _suspend_after_notice(
+        run, _("PowerDeck: suspending – battery low"),
+        _("Battery at {} % and not charging. The laptop will be suspended in {} s.").format(
+            percent, SUSPEND_DELAY_S),
+        _("Battery at {} %. Plug in power or shut the laptop down.").format(percent), sleep)
 
 
 def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
@@ -119,9 +148,7 @@ def run_once(state: GuardState, run: Runner = system_runner, profiles=None):
         elif ev == "critical":
             critical_reaction(run, s.cpu_temp_c, prof.thermal_guard["critical_celsius"])
         elif ev == "low_battery":
-            _notify(run, _("PowerDeck: battery low"),
-                    _("{} % with the lid-ignore profile active. Plug in power or restore the default "
-                      "profile.").format(s.battery_percent), True)
+            low_battery_reaction(run, s.battery_percent)
     return state
 
 
@@ -168,4 +195,4 @@ def loop(interval: int = 30, run: Runner = system_runner) -> None:  # pragma: no
     st = GuardState()
     while True:
         st = run_once(st, run)
-        time.sleep(interval)
+        time.sleep(CONFIRM_INTERVAL_S if st.critical_pending else interval)

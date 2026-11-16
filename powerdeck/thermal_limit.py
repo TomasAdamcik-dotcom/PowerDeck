@@ -80,6 +80,7 @@ class Knob:
         self.path, self.original, self.floor, self.hw_max = path, original, floor, hw_max
         self.written: int | None = None
         self.firmware_cap: int | None = None  # a lower limit firmware set while we regulate
+        self.capped_by: Knob | None = None    # PL2: never above the PL1 now in effect
 
     def ceiling(self) -> int | None:
         hw = _int(self.hw_max) if self.hw_max else None
@@ -100,13 +101,20 @@ def rapl_knobs(powercap: str = POWERCAP, need_write: bool = True, any_value: boo
         d = f"{powercap}/{dom}"
         if not (_read(f"{d}/name") or "").startswith("package") or _read(f"{d}/enabled") != "1":
             continue
+        found = {}
         for i in range(3):
-            if _read(f"{d}/constraint_{i}_name") not in RAPL_CONSTRAINTS:
+            name = _read(f"{d}/constraint_{i}_name")
+            if name not in RAPL_CONSTRAINTS or name in found:
                 continue
             path = f"{d}/constraint_{i}_power_limit_uw"
             v = _int(path)
             if v is not None and (any_value or v > RAPL_FLOOR_UW) and (not need_write or os.access(path, os.W_OK)):
-                knobs.append(Knob(path, v, RAPL_FLOOR_UW))
+                found[name] = Knob(path, v, RAPL_FLOOR_UW)
+        if "long_term" in found and "short_term" in found:
+            # No PL2 bursts above PL1: in the bag test a 55 W turbo burst at the start of a load
+            # reached the guard's critical 84 °C in seconds, before the controller could react.
+            found["short_term"].capped_by = found["long_term"]
+        knobs += [found[n] for n in RAPL_CONSTRAINTS if n in found]  # PL1 first, see apply_level
     return knobs
 
 
@@ -170,6 +178,8 @@ def apply_level(knobs: list[Knob], level: float) -> list[int]:
         want = max(k.floor, int(ceiling * level)) if level < 1 else ceiling
         if k.firmware_cap is not None:
             want = min(want, k.firmware_cap)  # also below our own floor
+        if k.capped_by is not None and k.capped_by.written is not None:
+            want = min(want, k.capped_by.written)  # PL1 of this domain, already applied this tick
         if level >= 1 and k.original is None:
             want = UNLIMITED_KHZ  # no cap; the kernel clamps it to the hardware maximum
             if cur is not None and cur >= ceiling:

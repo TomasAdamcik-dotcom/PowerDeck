@@ -134,6 +134,7 @@ def test_hot_cpu_lowers_both_domains_and_stop_restores(sysfs):
         tl.restore = saved
     assert seen["intel-rapl:0/constraint_0"] == 52_250_000             # 55 W × 0.95
     assert seen["intel-rapl-mmio:0/constraint_0"] == 28_500_000        # 30 W × 0.95
+    assert seen["intel-rapl-mmio:0/constraint_1"] == 28_500_000        # PL2 ≤ PL1: no bursts
     assert seen["intel-rapl-mmio:0/constraint_2"] == 114 * W           # peak power untouched
     assert seen["state"]["target"] == 65 and seen["state"]["limit"] == "28.5 W"
     assert limits(pc) == before                                         # restored on exit
@@ -145,6 +146,46 @@ def test_floor_is_5_watts(sysfs):
     make_zone(th, 90)
     _kind, knobs = tl.discover(str(pc))
     assert set(tl.apply_level(knobs, tl.LEVEL_MIN)) == {5_500_000, tl.RAPL_FLOOR_UW}
+
+
+def test_pl2_never_bursts_above_pl1(sysfs):
+    """Bag test 2026-11-16: power-saver had PL1 at 11 W but PL2 stayed 55 W, and a turbo burst
+    at the start of a load reached 84 °C before the controller reacted."""
+    pc, _th, st, _cr = sysfs
+    mmio = pc / "intel-rapl-mmio:0"
+    (mmio / "constraint_0_power_limit_uw").write_text(f"{11 * W}\n")  # power-saver PL1
+    before = limits(pc)
+    _kind, knobs = tl.discover(str(pc))
+    tl.apply_level(knobs, 1.0)                                  # cool: no regulation yet
+    assert limits(pc)["intel-rapl-mmio:0/constraint_1"] == 11 * W
+    assert limits(pc)["intel-rapl:0/constraint_1"] == 55 * W    # already equal to its PL1
+    tl.apply_level(knobs, 0.5)
+    assert limits(pc)["intel-rapl-mmio:0/constraint_1"] == 5_500_000
+    (mmio / "constraint_0_power_limit_uw").write_text(f"{30 * W}\n")  # back to performance
+    tl.apply_level(knobs, 1.0)
+    assert limits(pc)["intel-rapl-mmio:0/constraint_1"] == 30 * W     # follows PL1 up again
+    tl.restore(knobs, str(st))
+    assert limits(pc)["intel-rapl-mmio:0/constraint_1"] == before["intel-rapl-mmio:0/constraint_1"]
+
+
+def test_pl2_cap_needs_pl1_in_the_same_domain(sysfs):
+    pc, _th, _st, _cr = sysfs
+    (pc / "intel-rapl-mmio:0/constraint_0_name").write_text("other\n")  # no PL1 here
+    _kind, knobs = tl.discover(str(pc))
+    tl.apply_level(knobs, 1.0)
+    assert limits(pc)["intel-rapl-mmio:0/constraint_1"] == 55 * W   # not capped by the MSR PL1
+    assert [k.capped_by is not None for k in knobs] == [False, True, False]
+
+
+def test_pl2_is_restored_after_a_crash(sysfs):
+    pc, th, st, cr = sysfs
+    before = limits(pc)
+    _kind, knobs = tl.discover(str(pc))
+    tl.write_state(str(st), {"originals": {k.path: k.original for k in knobs}})
+    tl.apply_level(knobs, 0.3)                                  # then SIGKILL: no finally
+    assert limits(pc) != before
+    assert tl.restore_from_state(str(st), str(pc), str(cr)) == 0
+    assert limits(pc) == before
 
 
 def test_firmware_raise_becomes_the_new_original(sysfs):
