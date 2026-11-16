@@ -16,6 +16,15 @@ Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mod
 
 Tested on **Ubuntu 26.04 with GNOME** (ThinkPad T14s Gen 4, Intel) and in an Ubuntu VM; other systems are untested. The `.deb` is for Debian/Ubuntu.
 
+`scripts/compat-matrix.sh` checks other distributions in containers (library versions, tools, GNOME settings keys, tests, CLI plan, headless GUI, `.deb` install/remove). It does not cover systemd/logind, pkexec, the lid or RDP, which need a real session. Result 2026-11-16:
+
+| Distribution | Result |
+|---|---|
+| Debian 13 (GNOME) | everything passes, `.deb` installs and removes |
+| Fedora 45 (GNOME) | app, tests and GUI pass; **power mode is skipped**: Fedora ships tuned-ppd without `powerprofilesctl` (install `power-profiles-daemon` instead); no `.deb` |
+| Manjaro (GNOME) | everything passes; no package yet, run from source |
+| Linux Mint 22.2 (Cinnamon) | `.deb`, app and GUI work, but Cinnamon has its own settings: auto-suspend, screen lock/blank, night light and remote desktop are **not** applied (or change GNOME keys Cinnamon ignores). Lid, Wi‑Fi, power mode, Bluetooth and CPU work |
+
 | Needs | For | Notes |
 |---|---|---|
 | systemd + logind, polkit (`pkexec`) | lid, suspend, admin changes | almost every distribution |

@@ -54,6 +54,13 @@ Drobnosti:
 
 - Diakritika cez RDP (á, í, ž…) chýba, keď je na notebooku aktívne rozloženie `gb`: gnome-remote-desktop hlási „No keycode found for keyval“. Prepnúť na `sk` alebo nastaviť rozloženie v RDP klientovi.
 
+## Kompatibilita s inými distribúciami (výsledok `scripts/compat-matrix.sh`, 2026-11-16)
+
+- [ ] **Fedora:** režim napájania cez D-Bus (`org.freedesktop.UPower.PowerProfiles`, ktorý poskytuje aj tuned-ppd) namiesto `powerprofilesctl`; balík `.rpm`.
+- [ ] **Linux Mint (Cinnamon):** gsettings kľúče Cinnamonu (`org.cinnamon.settings-daemon.plugins.power`, `org.cinnamon.desktop.screensaver`, `org.cinnamon.desktop.session`) alebo aspoň v GUI ukázať, čo na Cinnamone nefunguje.
+- [ ] **Manjaro/Arch:** balík (PKGBUILD).
+- [ ] Overiť vo VM: systemd/logind (veko), pkexec, strážcu a RDP na Debiane 13 a Fedore (cloud obrazy); Mint a Manjaro len z ISO.
+
 ## Hotové
 
 **v1.0.0 (2026-11-16)** – prvé verejné vydanie
