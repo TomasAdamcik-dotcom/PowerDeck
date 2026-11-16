@@ -31,6 +31,9 @@ CPU_ZONE_TYPES = ("x86_pkg_temp", "coretemp", "k10temp", "cpu", "cpu-thermal", "
 
 INTERVAL_S = 2
 LEVEL_MIN, LEVEL_STEP, HYSTERESIS_C = 0.1, 0.02, 3
+# At most this much down per tick: the first seconds of a load spike the package temperature
+# far above target (turbo burst) and a purely proportional step overshot to the 5 W floor.
+LEVEL_MAX_DOWN = 0.08
 
 
 def valid_target(s) -> bool:
@@ -136,11 +139,11 @@ def read_temp(root: str = THERMAL) -> float | None:
 
 
 def next_level(level: float, temp: float | None, target: int) -> float:
-    """Proportional step down when hot, slow step up when clearly below target."""
+    """Proportional (but capped) step down when hot, slow step up when clearly below target."""
     if temp is None:
         return level
     if temp > target:
-        level -= LEVEL_STEP * max(1.0, temp - target)
+        level -= min(LEVEL_MAX_DOWN, LEVEL_STEP * max(1.0, temp - target))
     elif temp < target - HYSTERESIS_C:
         level += LEVEL_STEP
     return round(min(1.0, max(LEVEL_MIN, level)), 3)

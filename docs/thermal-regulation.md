@@ -28,7 +28,9 @@ Actuator, first one available:
 
 Controller (level `f`, original limit × `f`):
 
-- temperature above target: `f -= 0.02 × max(1, T − target)` (fast, proportional)
+- temperature above target: `f -= min(0.08, 0.02 × max(1, T − target))` (proportional, but at
+  most 0.08 per tick: without the cap the load spike at start, 82 °C, dropped the T14s to the
+  5 W floor for 20 s)
 - temperature below target − 3 °C: `f += 0.02` (slow, about 1 W / 100 MHz per 2 s)
 - otherwise: hold.
 
