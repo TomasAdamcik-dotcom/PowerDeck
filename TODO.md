@@ -28,8 +28,8 @@ Drobnosti:
 
 ## B. Rozhodnutia vlastníka
 
-- [ ] **Licencia** (AppStream má `LicenseRef-proprietary`) a či je repo verejné.
-- [ ] **Maintainer v `.deb`** je placeholder (`noreply@example.invalid`).
+- [x] **Licencia:** GPL-3.0-or-later (2026-11-16). Repo sa zverejní.
+- [x] **Maintainer v `.deb`:** GitHub noreply adresa vlastníka.
 
 ## C. Revízia GUI
 

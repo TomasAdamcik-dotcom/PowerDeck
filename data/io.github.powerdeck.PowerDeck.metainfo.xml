@@ -5,7 +5,7 @@
   <summary>Switch laptop profiles for work, travel, battery life and maximum performance</summary>
   <summary xml:lang="sk">Prepínanie profilov notebooku pre prácu, cestovanie, batériu a hranie</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>LicenseRef-proprietary</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>PowerDeck applies profiles of lid, suspend, Wi-Fi powersave and power-mode settings. Every change is shown first, confirmed by you, backed up and can be reverted.</p>
   </description>

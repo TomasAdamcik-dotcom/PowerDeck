@@ -12,6 +12,23 @@ See also [future_improvements.md](future_improvements.md) (how to work more effi
 
 Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mode, display timers/brightness/night light, Bluetooth, CPU limits and a temperature-regulated CPU power limit (Rucksack), whitelisted user-service tasks; thermal/battery guard that starts with the session (suspends on sustained overheating or at 15 % battery with the lid ignored, keeps RDP reachable); GTK4 app with profile editor and a top-bar icon; CLI; `.deb` build. See [TODO.md](TODO.md) for what is left and the real-hardware checklist.
 
+## Requirements and compatibility
+
+Tested on **Ubuntu 26.04 with GNOME** (ThinkPad T14s Gen 4, Intel) and in an Ubuntu VM; other systems are untested. The `.deb` is for Debian/Ubuntu.
+
+| Needs | For | Notes |
+|---|---|---|
+| systemd + logind, polkit (`pkexec`) | lid, suspend, admin changes | almost every distribution |
+| NetworkManager | Wi‑Fi powersave, tethering | |
+| power-profiles-daemon (`powerprofilesctl`) | power mode | Fedora 41+ ships tuned-ppd instead (untested) |
+| GNOME | idle/lock/display settings, desktop sharing (RDP), the guard's screensaver handling, top-bar icon (AppIndicator extension) | on KDE/Xfce only lid, Wi‑Fi and power mode would work |
+| Python 3.11+, GTK 4.10+, libadwaita 1.5+ | the app | Ubuntu 24.04+, Debian 13+, Fedora 40+ (not Debian 12) |
+| CPU | turbo: Intel and AMD; temperature regulation: RAPL power limits (Intel), otherwise the max-frequency cap | |
+
+## Licence
+
+GPL-3.0-or-later, see [LICENSE](LICENSE).
+
 ## Install admin helper (needed for lid settings)
 
 ```bash

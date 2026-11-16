@@ -33,6 +33,25 @@ printf '#!/usr/bin/python3\nimport sys\nfrom powerdeck.cli import main\nsys.exit
 printf '#!/usr/bin/python3\nimport sys\nfrom powerdeck.gtk_app import main\nsys.exit(main())\n' > "$OUT/usr/bin/powerdeck-gtk"
 chmod 0755 "$OUT/usr/bin/powerdeck" "$OUT/usr/bin/powerdeck-gtk"
 
+# Debian policy: licence of the package in /usr/share/doc/<package>/copyright
+install -d "$OUT/usr/share/doc/powerdeck"
+cat > "$OUT/usr/share/doc/powerdeck/copyright" <<'COPYRIGHT'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: PowerDeck
+Source: https://github.com/TomasAdamcik-dotcom/PowerDeck
+
+Files: *
+Copyright: 2026 Tomas Adamcik
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ On Debian systems, the full text of the GNU General Public License
+ version 3 can be found in the file /usr/share/common-licenses/GPL-3.
+COPYRIGHT
+chmod 0644 "$OUT/usr/share/doc/powerdeck/copyright"
 cat > "$OUT/DEBIAN/control" <<CTL
 Package: powerdeck
 Version: $VERSION
@@ -41,7 +60,8 @@ Priority: optional
 Architecture: all
 Depends: python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-4.0, gir1.2-adw-1, pkexec | policykit-1, network-manager
 Recommends: power-profiles-daemon, libnotify-bin, brightnessctl, dbus-bin
-Maintainer: PowerDeck <noreply@example.invalid>
+Maintainer: Tomas Adamcik <82325837+TomasAdamcik-dotcom@users.noreply.github.com>
+Homepage: https://github.com/TomasAdamcik-dotcom/PowerDeck
 Description: Linux workstation profiles
  Switch laptop profiles (lid, suspend, Wi-Fi powersave, power mode) with
  confirmation, backup and rollback.
