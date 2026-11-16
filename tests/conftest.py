@@ -17,3 +17,5 @@ def no_host_cpu(monkeypatch, tmp_path):
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("LANG", "C.UTF-8")
+    # ... nor on its desktop: GNOME unless a test says otherwise
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")

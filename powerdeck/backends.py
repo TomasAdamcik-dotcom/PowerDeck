@@ -5,10 +5,12 @@ profile wants and are shared with describe.py, so the GUI shows exactly what is 
 """
 from __future__ import annotations
 
+import re
+
 import os
 
 from . import commands as cmd
-from . import cpu, helper
+from . import cpu, desktop, helper
 from .changes import (BRIGHTNESS, CPU, GSETTINGS, LOGIND, NMCLI, POWER_PROFILES, RFKILL, TASK,
                       Change)
 from .commands import HELPER_PATH, LID_ORDER  # noqa: F401  (HELPER_PATH: public name)
@@ -84,13 +86,27 @@ def plan_lid(p: Profile, run: Runner, dropin_dir: str | None = None) -> list[Cha
     cur = read_lid(dropin_dir)
     base = cur or {k: "suspend" for k in LID_ORDER}
     want = lid_settings(p, base)
-    if want == base:
+    out = []
+    if want != base:
+        default = all(v == "suspend" for v in want.values())
+        out.append(Change(LOGIND, "Lid close (battery/AC/dock)",
+                          _lid_text(base) if cur else "system default",
+                          "system default" if default else _lid_text(want),
+                          cmd.lid(want), cmd.set_lid(cur) if cur else cmd.remove_lid(), privileged=True))
+    return out + plan_cinnamon_lid(p, run)
+
+
+def plan_cinnamon_lid(p: Profile, run: Runner) -> list[Change]:
+    """Cinnamon's settings daemon acts on the lid itself (it holds logind's lid inhibitor), so on
+    Cinnamon the same wish also goes to its own keys (no dock key there)."""
+    if desktop.current() != desktop.CINNAMON:
         return []
-    default = all(v == "suspend" for v in want.values())
-    return [Change(LOGIND, "Lid close (battery/AC/dock)",
-                   _lid_text(base) if cur else "system default",
-                   "system default" if default else _lid_text(want),
-                   cmd.lid(want), cmd.set_lid(cur) if cur else cmd.remove_lid(), privileged=True)]
+    out = []
+    for src in ("battery", "ac"):
+        if src in p.lid:
+            out += _gs_change(run, f"Cinnamon lid close ({src})", desktop.CINNAMON_LID[src],
+                              desktop.CINNAMON_LID_ACTION[p.lid[src]], parse=_unquote)
+    return out
 
 
 # -- Wi-Fi powersave per NetworkManager connection -------------------------
@@ -125,17 +141,34 @@ def plan_wifi(p: Profile, run: Runner) -> list[Change]:
 
 
 # -- power-profiles-daemon -------------------------------------------------
+_DBUS_STRING_RE = re.compile(r"'([a-z-]+)'")
+
+
+def read_power_mode(run: Runner) -> tuple[str, bool] | None:
+    """(current power mode, True if only the D-Bus API has it), or None without a daemon.
+    Fedora's tuned-ppd has the power-profiles-daemon D-Bus API but no powerprofilesctl."""
+    rc, out = run(cmd.GET_POWER_MODE)
+    if rc == 0 and out.strip():
+        return out.strip(), False
+    if rc == 127:
+        rc, out = run(cmd.GET_POWER_MODE_DBUS)
+        m = _DBUS_STRING_RE.search(out) if rc == 0 else None
+        if m:
+            return m.group(1), True
+    return None
+
+
 def plan_power_mode(p: Profile, run: Runner) -> list[Change]:
     if p.power_mode is None:
         return []
-    rc, cur = run(["powerprofilesctl", "get"])
-    if rc != 0:
+    found = read_power_mode(run)
+    if found is None:
         return []
-    cur = cur.strip()
+    cur, dbus = found
     if cur == p.power_mode:
         return []
     return [Change(POWER_PROFILES, "Power mode", cur, p.power_mode,
-                   cmd.power_mode(p.power_mode), cmd.power_mode(cur))]
+                   cmd.power_mode(p.power_mode, dbus), cmd.power_mode(cur, dbus))]
 
 
 # -- Tethering autoconnect -------------------------------------------------

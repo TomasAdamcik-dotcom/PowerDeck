@@ -1,4 +1,4 @@
-"""powerdeck CLI: list | status | plan NAME | apply NAME [-y] | restore | reset-all | snapshot | monitor | guard"""
+"""powerdeck CLI: list | status | doctor | plan NAME | apply NAME [-y] | restore | reset-all | snapshot | monitor | guard"""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
     sub.add_parser("status")
+    sub.add_parser("doctor", help="check what PowerDeck can do on this system")
     sub.add_parser("restore")
     r = sub.add_parser("reset-all", help="undo every applied profile (used when uninstalling)")
     r.add_argument("--only", choices=("user", "system"))
@@ -50,6 +51,9 @@ def main(argv=None) -> int:
         for k, v in asdict(read_status(remote_login=True)).items():
             print(f"{k}: {v}")
         return 0
+    if a.cmd == "doctor":
+        from . import doctor
+        return doctor.run_cli()
     if a.cmd == "monitor":
         from . import monitor
         monitor.run_cli(a.interval, a.duration, a.csv)
