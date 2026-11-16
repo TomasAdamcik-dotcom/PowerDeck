@@ -71,3 +71,80 @@ def test_pending_undo_shows_value_before_powerdeck_and_value_now(env):
     assert engine.pending_undo(b) and switch(sysm, b, active, C, B) == []
     assert sysm.mode == "power-saver" and sysm.wifi["MojTelefon"] == "0"
     assert [c.target for c in engine.pending_undo(b)] == ["Power mode"]
+
+
+class Backlight:
+    """Wraps a FakeSystem with a backlight that something outside PowerDeck may change."""
+
+    def __init__(self, sysm, level, jump_to=None):
+        self.sysm, self.level, self.jump_to, self.sets = sysm, level, jump_to, []
+
+    def __call__(self, argv):
+        if argv == ["brightnessctl", "-m"]:
+            return 0, f"intel_backlight,backlight,{self.level * 100},{self.level}%,10000"
+        if argv[:2] == ["brightnessctl", "set"]:
+            self.level = int(argv[2].rstrip("%"))
+            self.sets.append(self.level)
+            return 0, ""
+        if self.jump_to is not None and argv[:1] == ["powerprofilesctl"] and argv[1:2] == ["set"]:
+            self.level, self.jump_to = self.jump_to, None   # e.g. GNOME after a mode change
+        return self.sysm(argv)
+
+
+@pytest.fixture
+def no_wait(monkeypatch):
+    monkeypatch.setattr(engine, "BRIGHTNESS_SETTLE_S", 0)
+
+
+DEFAULT = Profile(name="Default", power_mode="balanced")
+
+
+def test_back_on_default_the_last_default_brightness_returns(env, no_wait):
+    sysm, b, active = env
+    light = Backlight(sysm, 21, jump_to=50)
+    assert engine.switch_to(DEFAULT, light, None, b, active) == []
+    assert engine.switch_to(A, light, DEFAULT, b, active) == []       # leaves Default at 21 %
+    light.level, light.jump_to = 70, 50                                # changed meanwhile; then a jump
+    assert engine.switch_to(DEFAULT, light, A, b, active) == []
+    assert light.level == 21
+
+
+def test_default_brightness_unknown_means_25_percent(env, no_wait):
+    sysm, b, active = env
+    light = Backlight(sysm, 50)
+    assert engine.switch_to(DEFAULT, light, A, b, active) == []
+    assert light.level == engine.DEFAULT_BRIGHTNESS == 25
+
+
+def test_brightness_untouched_when_not_going_to_default_or_staying(env, no_wait):
+    sysm, b, active = env
+    light = Backlight(sysm, 60)
+    engine.switch_to(A, light, None, b, active)
+    engine.switch_to(B, light, A, b, active)
+    engine.switch_to(DEFAULT, light, DEFAULT, b, active)               # re-apply: nothing to fix
+    assert light.sets == [] and light.level == 60
+    # a Default that sets its own brightness keeps it
+    own = Profile(name="Default", power_mode="balanced", display={"brightness_percent": 80})
+    engine.switch_to(own, light, B, b, active)
+    assert light.level == 80
+
+
+def test_keep_brightness_catches_a_late_jump():
+    calls = []
+    state = {"level": 30, "polls": 0}
+
+    def run(argv):
+        if argv == ["brightnessctl", "-m"]:
+            state["polls"] += 1
+            if state["polls"] == 3:
+                state["level"] = 50                                    # jumps a moment later
+            return 0, f"x,backlight,1,{state['level']}%,100"
+        calls.append(argv)
+        state["level"] = int(argv[2].rstrip("%"))
+        return 0, ""
+    engine.keep_brightness(run, 30, settle=2.0, sleep=lambda s: None)
+    assert calls == [["brightnessctl", "set", "30%"]] and state["level"] == 30
+
+
+def test_keep_brightness_without_backlight_does_nothing():
+    engine.keep_brightness(lambda argv: (127, ""), 30, sleep=lambda s: pytest.fail("waited"))

@@ -218,16 +218,25 @@ def display_settings(d: dict) -> list[tuple[str, str, tuple[str, str], str]]:
     return out
 
 
+def read_brightness(run: Runner) -> int | None:
+    """Display brightness in percent (brightnessctl), or None without a backlight."""
+    rc, o = run(["brightnessctl", "-m"])
+    if rc == 0 and o.count(",") >= 4:
+        level = o.split(",")[3].rstrip("%")
+        if level.isdigit():
+            return int(level)
+    return None
+
+
 def plan_display(p: Profile, run: Runner) -> list[Change]:
     d = p.display
     out: list[Change] = []
     for _key, label, setting, value in display_settings(d):
         out += _gs_change(run, label, setting, value)
     if "brightness_percent" in d:
-        rc, o = run(["brightnessctl", "-m"])
-        if rc == 0 and o.count(",") >= 4:
-            cur = o.split(",")[3].rstrip("%")
-            new = str(d["brightness_percent"])
+        level = read_brightness(run)
+        if level is not None:
+            cur, new = str(level), str(d["brightness_percent"])
             if cur != new:
                 out.append(Change(BRIGHTNESS, "Brightness (%)", cur, new,
                                   cmd.brightness(new), cmd.brightness(cur)))
