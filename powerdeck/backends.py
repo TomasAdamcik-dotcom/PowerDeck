@@ -17,6 +17,8 @@ from .runner import Runner
 
 PS = cmd.POWER_SCHEMA
 WIFI_VALUES = cmd.WIFI_POWERSAVE_VALUES
+# `nmcli -g` prints names, PowerDeck writes numbers: compare them as numbers
+NM_POWERSAVE_NUMBER = {"default": "0", "ignore": "1", "disable": "2", "enable": "3"}
 
 
 def _unquote(s: str) -> str:
@@ -116,7 +118,7 @@ def plan_wifi(p: Profile, run: Runner) -> list[Change]:
         if rc != 0:
             continue  # connection not saved on this machine
         cur = cur.strip() or "0"
-        if cur != new:
+        if NM_POWERSAVE_NUMBER.get(cur, cur) != new:
             out.append(Change(NMCLI, f"Wi-Fi powersave [{name}]", cur, new,
                               cmd.wifi_powersave(name, new), cmd.wifi_powersave(name, cur)))
     return out

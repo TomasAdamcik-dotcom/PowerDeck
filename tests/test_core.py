@@ -261,3 +261,13 @@ def test_restore_reports_broken_backup_instead_of_crashing(tmp_path):
     assert len(errs) == 1 and "malformed" in errs[0]
     (tmp_path / "a.json").write_text("[]")
     assert engine.active_profile(tmp_path / "a.json") is None
+
+
+def test_wifi_already_set_as_nmcli_prints_it_is_no_change():
+    """nmcli -g prints "disable"/"default", PowerDeck writes 2/0: no "disable → 2" in the plan."""
+    sysm = FakeSystem()
+    sysm.wifi = {"Home": "disable", "Cafe": "default"}
+    wifi = [c for c in engine.make_plan(Profile(name="W", wifi_powersave="off"), sysm).changes
+            if c.target.startswith("Wi-Fi powersave")]
+    assert [(c.target, c.old, c.new) for c in wifi] == [("Wi-Fi powersave [Cafe]", "default", "2")]
+    assert wifi[0].revert_argv[-1] == "default"
