@@ -9,5 +9,14 @@
   <description>
     <p>PowerDeck applies profiles of lid, suspend, Wi-Fi powersave and power-mode settings. Every change is shown first, confirmed by you, backed up and can be reverted.</p>
   </description>
+  <developer id="io.github.tomasadamcik-dotcom">
+    <name>Tomas Adamcik</name>
+  </developer>
+  <url type="homepage">https://github.com/TomasAdamcik-dotcom/PowerDeck</url>
+  <url type="bugtracker">https://github.com/TomasAdamcik-dotcom/PowerDeck/issues</url>
+  <content_rating type="oars-1.1"/>
   <launchable type="desktop-id">io.github.powerdeck.PowerDeck.desktop</launchable>
+  <releases>
+    <release version="1.0.0" date="2026-11-16"/>
+  </releases>
 </component>

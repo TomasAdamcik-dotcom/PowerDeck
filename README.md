@@ -8,7 +8,7 @@ Linux workstation profiles for Ubuntu/GNOME. See [SPECIFICATION.md](SPECIFICATIO
 
 See also [future_improvements.md](future_improvements.md) (how to work more efficiently next time).
 
-## Status (v0.4 – in daily use on a ThinkPad T14s Gen 4)
+## Status (v1.0 – in daily use on a ThinkPad T14s Gen 4)
 
 Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mode, display timers/brightness/night light, Bluetooth, CPU limits and a temperature-regulated CPU power limit (Rucksack), whitelisted user-service tasks; thermal/battery guard that starts with the session (suspends on sustained overheating or at 15 % battery with the lid ignored, keeps RDP reachable); GTK4 app with profile editor and a top-bar icon; CLI; `.deb` build. See [TODO.md](TODO.md) for what is left and the real-hardware checklist.
 

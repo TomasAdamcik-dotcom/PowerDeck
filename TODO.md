@@ -1,6 +1,6 @@
 # PowerDeck — stav a čo ostáva
 
-Stav: **v0.4** (2026-11-16). Beží na ThinkPade T14s Gen 4 (Ubuntu 26.04) ako nainštalovaný `.deb`:
+Stav: **v1.0.0** (2026-11-16, prvé verejné vydanie). Beží na ThinkPade T14s Gen 4 (Ubuntu 26.04) ako nainštalovaný `.deb`:
 strážca ako služba po prihlásení, ikona v hornej lište, Rucksack s reguláciou teploty overený v
 batohu s vzdialenou plochou. Rozhodnutia a ich dôvody sú v `SPECIFICATION.md`, sekcia 0.
 
@@ -55,6 +55,12 @@ Drobnosti:
 - Diakritika cez RDP (á, í, ž…) chýba, keď je na notebooku aktívne rozloženie `gb`: gnome-remote-desktop hlási „No keycode found for keyval“. Prepnúť na `sk` alebo nastaviť rozloženie v RDP klientovi.
 
 ## Hotové
+
+**v1.0.0 (2026-11-16)** – prvé verejné vydanie
+- Prepnutie profilu na jeden klik (najprv sa vrátia zmeny predošlého profilu), „Ukončiť PowerDeck“ vráti Default; tlačidlá „Zapnúť Remote Work“ a „Obnoviť predošlý stav“ z okna odstránené.
+- Graf histórie teploty a frekvencie CPU (strážca zapisuje každých 20 s, 7 dní), prepnutia profilov ako zvislé čiary.
+- Náhľad už nehlási „Wi-Fi powersave: disable → 2“ pri sieťach, ktoré sú už nastavené.
+- Licencia GPL-3.0-or-later, skutočný maintainer v `.deb`, požiadavky a kompatibilita v README.
 
 **v0.4 (2026-11-16)**
 - **Rucksack s reguláciou teploty** (cieľ 65 °C) namiesto pevného limitu: root služba `powerdeck-thermal@<°C>`, PI regulátor nad RAPL PL1/PL2 (záloha `scaling_max_freq`), PL2 nikdy nad PL1. Návrh v [docs/thermal-regulation.md](docs/thermal-regulation.md). Notebook: na stole 65 ± 1 °C pri ~15–17 W; v batohu na batérii (power-saver) 65–66 °C pri 9,4–11 W, bez skoku na štarte záťaže.
