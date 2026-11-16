@@ -212,6 +212,12 @@ def plan_cpu(p: Profile, run: Runner) -> list[Change]:
         if cur is not None and cur != new:
             out.append(Change(CPU, "CPU max frequency", f"{cur}%", f"{new}%",
                               cmd.cpu_max_percent(new), cmd.cpu_max_percent(cur), privileged=True))
+    if "thermal_target_celsius" in p.cpu and cpu.thermal_available():
+        cur, new = cpu.read_thermal_target(), p.cpu["thermal_target_celsius"]
+        if cur != new:
+            show = lambda t: "off" if t is None else f"{t} °C"
+            out.append(Change(CPU, "CPU temperature target", show(cur), show(new),
+                              cmd.thermal_target(new), cmd.thermal_target(cur), privileged=True))
     return out
 
 

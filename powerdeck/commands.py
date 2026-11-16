@@ -69,6 +69,13 @@ def cpu_max_percent(percent: int) -> list[str]:
     return privileged("set-cpu-max-percent", str(percent))
 
 
+def thermal_target(celsius: int | None) -> list[str]:
+    """Regulate the CPU to ``celsius`` (root daemon), or stop regulating (None)."""
+    if celsius is None:
+        return privileged("clear-thermal-target")
+    return privileged("set-thermal-target", str(celsius))
+
+
 def wifi_powersave(connection: str, value: str) -> list[str]:
     return ["nmcli", "connection", "modify", connection, "802-11-wireless.powersave", value]
 

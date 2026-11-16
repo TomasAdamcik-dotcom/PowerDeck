@@ -7,7 +7,8 @@ Open work: `TODO.md`. The owner writes in Slovak; answer in Slovak.
 ## Code that runs as root
 
 Root code is: `powerdeck/helper.py` (→ `/usr/libexec/powerdeck-helper`), `data/powerdeck-suspend`,
-`data/io.github.powerdeck.policy`, `scripts/uninstall-reset.sh`, the root pass of
+`powerdeck/thermal_limit.py` (→ `/usr/libexec/powerdeck-thermal`, run by
+`data/powerdeck-thermal@.service`), `data/io.github.powerdeck.policy`, `scripts/uninstall-reset.sh`, the root pass of
 `powerdeck reset-all --only system` (`engine.reset_all`, `commands.allowed_as_root`), the Debian
 maintainer scripts written by `scripts/build-deb.sh`, and `scripts/install-helper.sh`.
 
@@ -18,7 +19,8 @@ maintainer scripts written by `scripts/build-deb.sh`, and `scripts/install-helpe
 2. **No generic "run as root".** The helper and each polkit action do one narrow thing. A new
    privileged operation = a new helper subcommand with its own validation and tests, never a
    pass-through of argv, a shell string or a path chosen by the user.
-3. **Root's Python never imports from places a user controls:** `python3 -I` for the helper,
+3. **Root's Python never imports from places a user controls:** `python3 -I` for the helper and
+   the thermal daemon (both stdlib only),
    `-P` plus `cd /` in shell scripts; no `sys.path` tricks (checked by `tests/test_root_rules.py`).
 4. **Paths from the user side:** refuse symlinks a non-root user could have planted
    (`engine._symlinked_dir`); write system files atomically (`tmp` + `os.replace`), mode 0644.
@@ -37,6 +39,7 @@ maintainer scripts written by `scripts/build-deb.sh`, and `scripts/install-helpe
   (QEMU/KVM GNOME VM, see README) before asking the owner to test on the laptop.
 - Never type the owner's `sudo`/`pkexec` passwords; the owner runs `sudo …` and confirms pkexec.
 - Before testing on the real laptop: `diff powerdeck/helper.py /usr/libexec/powerdeck-helper`
+  (and `powerdeck/thermal_limit.py` against `/usr/libexec/powerdeck-thermal`)
   — if they differ, the owner must run `sudo scripts/install-helper.sh` first.
   After a test `apply`, always `restore`.
 - For a feature, write 2–3 acceptance criteria and what must *not* happen; turn them into tests.

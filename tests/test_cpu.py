@@ -79,13 +79,16 @@ def test_helper_turbo_write_error_is_reported(tmp_path, capsys):
 
 
 def test_plan_rucksack_cpu(fake_cpu):
+    (fake_cpu / "intel_pstate/no_turbo").write_text("1")
+    for i in (0, 1):
+        (fake_cpu / f"cpu{i}/cpufreq/scaling_max_freq").write_text("2000000")   # 50 % left by old Rucksack
     plan = engine.make_plan(BY["Rucksack"], lambda a: (127, ""))
     cpu_changes = [c for c in plan.changes if c.backend == "cpu"]
     assert [c.target for c in cpu_changes] == ["CPU turbo/boost", "CPU max frequency"]
-    assert cpu_changes[0].apply_argv[-2:] == ["set-cpu-turbo", "off"]
-    assert cpu_changes[0].revert_argv[-2:] == ["set-cpu-turbo", "on"]
-    assert cpu_changes[1].apply_argv[-2:] == ["set-cpu-max-percent", "50"]
-    assert cpu_changes[1].revert_argv[-2:] == ["set-cpu-max-percent", "100"]
+    assert cpu_changes[0].apply_argv[-2:] == ["set-cpu-turbo", "on"]
+    assert cpu_changes[0].revert_argv[-2:] == ["set-cpu-turbo", "off"]
+    assert cpu_changes[1].apply_argv[-2:] == ["set-cpu-max-percent", "100"]
+    assert cpu_changes[1].revert_argv[-2:] == ["set-cpu-max-percent", "50"]
     assert all(c.privileged and c.apply_argv[:2] == ["pkexec", backends.HELPER_PATH] for c in cpu_changes)
 
 
@@ -102,10 +105,9 @@ def test_plan_travel_lifts_rucksack_cap(fake_cpu):
 
 
 def test_plan_noop_when_already_set_or_unsupported(fake_cpu, tmp_path, monkeypatch):
-    (fake_cpu / "intel_pstate/no_turbo").write_text("1")
-    for i in (0, 1):
-        (fake_cpu / f"cpu{i}/cpufreq/scaling_max_freq").write_text("2000000")
+    # turbo on, no cap, and no temperature sensor: the thermal target is skipped
     assert [c for c in engine.make_plan(BY["Rucksack"], lambda a: (127, "")).changes if c.backend == "cpu"] == []
+    (fake_cpu / "intel_pstate/no_turbo").write_text("1")
     monkeypatch.setattr(cpu, "CPU_ROOT", str(tmp_path / "gone"))
     assert [c for c in engine.make_plan(BY["Travel"], lambda a: (127, "")).changes if c.backend == "cpu"] == []
 
@@ -142,9 +144,9 @@ def test_rucksack_is_strictest(fake_cpu):
     r, t = BY["Rucksack"], BY["Travel"]
     r.validate()
     assert r.lid == {"battery": "ignore", "ac": "ignore", "docked": "ignore"}
-    assert r.cpu["turbo"] is False and r.cpu["max_freq_percent"] < t.cpu["max_freq_percent"]
+    # regulated to a temperature below the guard's warning instead of a fixed cap
+    assert r.cpu["thermal_target_celsius"] < r.thermal_guard["warn_celsius"]
+    assert t.cpu["thermal_target_celsius"] is None
     assert r.power_mode == "power-saver" and r.bluetooth is False
     assert r.thermal_guard["warn_celsius"] < t.thermal_guard["warn_celsius"]
     assert r.thermal_guard["critical_celsius"] < t.thermal_guard["critical_celsius"]
-    plan = engine.make_plan(r, lambda a: (127, ""))
-    assert "CPU max frequency: 100% → 50%" in plan.diff_text()

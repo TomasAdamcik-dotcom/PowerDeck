@@ -25,5 +25,7 @@ def capture_current(run: Runner = system_runner, name: str = "Default") -> Profi
         p.cpu["turbo"] = t
     if m is not None:
         p.cpu["max_freq_percent"] = max(10, m)
+    if cpu.thermal_available():
+        p.cpu["thermal_target_celsius"] = cpu.read_thermal_target()
     p.validate()
     return p

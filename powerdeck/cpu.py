@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import glob
+import json
+import os
 
-CPU_ROOT = "/sys/devices/system/cpu"  # tests point this at a fake tree
+from . import thermal_limit
+
+CPU_ROOT = "/sys/devices/system/cpu"  # tests point these at fake trees
+POWERCAP_ROOT = thermal_limit.POWERCAP
+THERMAL_ROOT = thermal_limit.THERMAL
+THERMAL_STATE_DIR = thermal_limit.STATE_DIR
 
 
 def _read(path: str) -> str | None:
@@ -56,3 +63,31 @@ def read_freqs(root: str | None = None) -> tuple[float | None, float | None]:
         if m:
             hw.append(m)
     return (sum(cur) / len(cur) / 1000 if cur else None, max(hw) / 1000 if hw else None)
+
+
+def thermal_available() -> bool:
+    """True if the root daemon (thermal_limit) could regulate the CPU temperature here."""
+    return (bool(thermal_limit.discover(POWERCAP_ROOT, CPU_ROOT, need_write=False)[1])
+            and thermal_limit.read_temp(THERMAL_ROOT) is not None)
+
+
+def read_thermal(state_dir: str | None = None) -> dict | None:
+    """The running regulation (target °C, current limit), from the daemon's root-owned state file."""
+    path = os.path.join(state_dir or THERMAL_STATE_DIR, thermal_limit.STATE_FILE)
+    try:
+        with open(path) as f:
+            s = json.load(f)
+    except (OSError, ValueError):
+        return None
+    t = s.get("target") if isinstance(s, dict) else None
+    if not (isinstance(t, int) and not isinstance(t, bool)
+            and thermal_limit.MIN_TARGET <= t <= thermal_limit.MAX_TARGET):
+        return None
+    limit = s.get("limit")
+    return {"target": t, "limit": limit if isinstance(limit, str) else ""}
+
+
+def read_thermal_target(state_dir: str | None = None) -> int | None:
+    """Target °C of the running regulation, None if it is not running."""
+    s = read_thermal(state_dir)
+    return s["target"] if s else None

@@ -300,7 +300,8 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             lim = f" · {_('limit')} {s.limit_percent} %" if s.limit_percent else ""
             turbo = "" if s.turbo is None else f" · turbo {'on' if s.turbo else 'off'}"
-            freq = f"{s.freq_mhz:.0f} MHz ({s.freq_percent:.0f} %){lim}{turbo}"
+            reg = f" · {_('held at')} {s.regulation}" if s.regulation else ""
+            freq = f"{s.freq_mhz:.0f} MHz ({s.freq_percent:.0f} %){lim}{turbo}{reg}"
         self._set_monitor("freq", freq, s.freq_percent)
         self._set_monitor("load", na if s.load_percent is None else f"{s.load_percent:.0f} %", s.load_percent)
         self._set_monitor("power", na if s.power_w is None else f"{s.power_w:+.1f} W")

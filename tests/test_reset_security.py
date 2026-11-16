@@ -22,6 +22,8 @@ ALLOWED = [
     [H, "remove-lid"],
     [H, "set-cpu-turbo", "on"],
     [H, "set-cpu-max-percent", "100"],
+    [H, "set-thermal-target", "65"],
+    [H, "clear-thermal-target"],
     ["nmcli", "connection", "modify", "Home Wi-Fi", "802-11-wireless.powersave", "2"],
     ["nmcli", "connection", "modify", "Café:5G", "802-11-wireless.powersave", "default"],
     ["nmcli", "connection", "modify", "Tel", "connection.autoconnect", "no",
@@ -39,6 +41,13 @@ REFUSED = [
     [H, "set-lid", "ignore", "ignore", "rm -rf /"],
     [H, "set-cpu-max-percent", "5"],
     [H, "remove-lid", "extra"],
+    [H, "set-thermal-target", "95"],                         # outside 55-90
+    [H, "set-thermal-target", "54"],
+    [H, "set-thermal-target", "６５"],                         # non-ASCII digits
+    [H, "set-thermal-target", "65", "x"],
+    [H, "set-thermal-target"],
+    [H, "clear-thermal-target", "65"],
+    [H, "start-unit", "powerdeck-thermal@65.service"],
     [H],
     ["nmcli", "connection", "delete", "Tel"],
     ["nmcli", "connection", "modify", "--help", "802-11-wireless.powersave", "2"],

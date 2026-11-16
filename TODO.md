@@ -101,6 +101,7 @@ Meranie vplyvu (odporúčaný postup, pri rovnakej záťaži, napr. `stress-ng -
 ## 2c. Možné vylepšenia (navrhnuté, zatiaľ neschválené)
 
 - [ ] **Rucksack s reguláciou podľa teploty** namiesto pevného limitu 50 % (s vypnutým turbom ≈ 550 MHz). Profil by mal cieľovú teplotu, napr. `"thermal_target_celsius": 72`, a výkon by sa podľa nej sám uberal a pridával.
+  - **Implementované 2026-11-16** (vetva `thermal-regulation`, návrh v [docs/thermal-regulation.md](docs/thermal-regulation.md)): Rucksack = turbo on, 100 %, cieľ 65 °C. Testy, kontajner aj VM (jednotka so sprísnením štartuje, bez RAPL skončí s kódom 3 bez reštartov) ✓. **Ostáva test na notebooku:** `sudo scripts/install-helper.sh`, `powerdeck apply Rucksack`, záťaž (napr. `stress-ng --cpu 8 -t 5m`), sledovať `powerdeck monitor`, potom `restore` → limity RAPL späť na 55/55 W (MSR) a 30/55 W (MMIO). Thermald alternatíva sa nerobila.
   - **Slučka:** každých 5–10 s prečíta teplotu CPU.
     - Nad cieľom výkon o krok zníži, pod cieľom mínus hysterézia (napr. 65 °C) ho zvýši.
     - Výkon sa drží v medziach, napr. 5–15 W alebo 400 MHz – plný výkon.

@@ -1,0 +1,38 @@
+# Keeps the CPU near %i °C (see powerdeck/thermal_limit.py). Started and stopped only by
+# /usr/libexec/powerdeck-helper (set-thermal-target / clear-thermal-target); never enabled,
+# so like PowerDeck's other CPU limits it is gone after a reboot.
+[Unit]
+Description=PowerDeck CPU temperature regulation (%i °C)
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/powerdeck-thermal %i
+# puts the original limits back even if the daemon crashed or was killed
+ExecStopPost=/usr/libexec/powerdeck-thermal --restore
+Restart=on-failure
+RestartPreventExitStatus=2 3
+RuntimeDirectory=powerdeck-thermal
+RuntimeDirectoryMode=0755
+# it only writes limits in /sys (files owned by root, so no capability is needed) and its state
+# file in /run/powerdeck-thermal; /sys must stay writable, so no ProtectKernelTunables
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service

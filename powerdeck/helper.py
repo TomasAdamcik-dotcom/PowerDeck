@@ -2,8 +2,9 @@
 """Privileged helper, installed as /usr/libexec/powerdeck-helper (root-owned)
 and run via ``pkexec /usr/libexec/powerdeck-helper …`` (see data/*.policy).
 
-It can ONLY manage the PowerDeck logind drop-in. It never executes
-arbitrary commands and validates every argument against a whitelist.
+It can ONLY manage the PowerDeck logind drop-in, the CPU turbo/frequency limits and the
+CPU temperature regulation service. It never executes arbitrary commands and validates every
+argument against a whitelist.
 """
 from __future__ import annotations
 
@@ -76,7 +77,30 @@ def set_max_percent(pct: int, root: str = CPU_ROOT) -> int:
     return 1 if failed else 0
 
 
-USAGE = "usage: set-lid B AC D | remove-lid | set-cpu-turbo on|off | set-cpu-max-percent 10-100"
+THERMAL_DAEMON = "/usr/libexec/powerdeck-thermal"
+THERMAL_UNITS = "powerdeck-thermal@*.service"
+MIN_TARGET, MAX_TARGET = 55, 90  # same as thermal_limit.MIN_TARGET/MAX_TARGET
+
+
+def _systemctl(*args: str) -> int:
+    return subprocess.run(["systemctl", *args], check=False).returncode
+
+
+def set_thermal_target(celsius: int) -> int:
+    """Run powerdeck-thermal@<celsius>.service, and no other instance."""
+    if subprocess.run([THERMAL_DAEMON, "--check"], check=False).returncode != 0:
+        print("CPU temperature regulation not available on this machine", file=sys.stderr)
+        return 3
+    _systemctl("stop", THERMAL_UNITS)  # its ExecStopPost restores the limits first
+    return _systemctl("start", f"powerdeck-thermal@{celsius}.service")
+
+
+def clear_thermal_target() -> int:
+    return _systemctl("stop", THERMAL_UNITS)
+
+
+USAGE = ("usage: set-lid B AC D | remove-lid | set-cpu-turbo on|off | set-cpu-max-percent 10-100 | "
+         f"set-thermal-target {MIN_TARGET}-{MAX_TARGET} | clear-thermal-target")
 
 
 def valid_args(argv: list[str]) -> bool:
@@ -91,8 +115,10 @@ def valid_args(argv: list[str]) -> bool:
         return argv[1] in ("on", "off")
     if len(argv) == 2 and argv[0] == "set-cpu-max-percent":
         return argv[1].isascii() and argv[1].isdigit() and 10 <= int(argv[1]) <= 100
+    if len(argv) == 2 and argv[0] == "set-thermal-target":
+        return argv[1].isascii() and argv[1].isdigit() and MIN_TARGET <= int(argv[1]) <= MAX_TARGET
     if len(argv) == 1:
-        return argv[0] == "remove-lid"
+        return argv[0] in ("remove-lid", "clear-thermal-target")
     if len(argv) == 4 and argv[0] == "set-lid":
         return all(v in ACTIONS for v in argv[1:])
     return False
@@ -107,6 +133,10 @@ def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True,
         return set_turbo(argv[1] == "on", cpu_root)
     if argv[0] == "set-cpu-max-percent":
         return set_max_percent(int(argv[1]), cpu_root)
+    if argv[0] == "set-thermal-target":
+        return set_thermal_target(int(argv[1]))
+    if argv[0] == "clear-thermal-target":
+        return clear_thermal_target()
     if argv[0] == "remove-lid":
         try:
             os.remove(os.path.join(dropin_dir, DROPIN))
