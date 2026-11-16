@@ -42,3 +42,55 @@ def test_polkit_actions_point_only_at_the_two_helpers():
     policy = (ROOT / "data/io.github.powerdeck.policy").read_text()
     paths = re.findall(r'org\.freedesktop\.policykit\.exec\.path">([^<]+)<', policy)
     assert sorted(paths) == ["/usr/libexec/powerdeck-helper", "/usr/libexec/powerdeck-suspend"]
+
+
+def _ours(paths):
+    """scripts/install-paths.sh's verdict for each path (True = install.sh may write/remove it)."""
+    import subprocess
+    script = '. scripts/install-paths.sh; for p in "$@"; do ours "$p" && echo y || echo n; done'
+    out = subprocess.run(["sh", "-c", script, "sh", *paths], cwd=ROOT, capture_output=True,
+                         text=True, check=True).stdout.split()
+    return [v == "y" for v in out]
+
+
+def _staged(tmp_path, pylib):
+    import subprocess
+    subprocess.run(["sh", "scripts/stage.sh", str(tmp_path), pylib], cwd=ROOT, check=True)
+    return {"/" + str(p.relative_to(tmp_path)): p for p in tmp_path.rglob("*") if not p.is_dir()}
+
+
+def test_install_script_may_write_every_staged_file(tmp_path):
+    for pylib in ("/usr/lib/python3/dist-packages", "/usr/lib/python3.14/site-packages",
+                  "/usr/lib64/python3.9/site-packages"):
+        files = _staged(tmp_path / pylib.replace("/", "_"), pylib)
+        assert len(files) > 40 and all(_ours(sorted(files))), files
+
+
+def test_install_script_refuses_other_paths():
+    assert not any(_ours([
+        "/etc/passwd", "/usr/bin/sh", "/usr/bin/powerdeck-x/../sh", "/usr/libexec/powerdeck-x/y",
+        "/usr/lib/python3.12/site-packages/other/powerdeck/cli.py",
+        "/usr/lib/python3.12/site-packages/powerdeck/sub/x.py",
+        "/usr/lib/python3/x/site-packages/powerdeck/cli.py", "/usr/lib/python3.14/site-packages/x.py",
+        "/usr/share/applications/other.desktop", "/usr/bin/powerdeck:x", "/usr/bin/powerdeck\n/etc/passwd",
+        "usr/bin/powerdeck", "/home/u/.local/bin/powerdeck",
+    ]))
+
+
+def test_staged_modes(tmp_path):
+    files = _staged(tmp_path, "/usr/lib/python3/dist-packages")
+    exe = {f for f, p in files.items() if not p.is_symlink() and p.stat().st_mode & 0o777 == 0o755}
+    assert exe == {"/usr/bin/powerdeck", "/usr/bin/powerdeck-gtk", "/usr/libexec/powerdeck-helper",
+                   "/usr/libexec/powerdeck-suspend", "/usr/libexec/powerdeck-thermal",
+                   "/usr/libexec/powerdeck-uninstall-reset"}
+    others = {p.stat().st_mode & 0o777 for f, p in files.items() if f not in exe and not p.is_symlink()}
+    assert others == {0o644}
+
+
+def test_install_script_needs_root_and_isolates_python():
+    script = (ROOT / "scripts/install.sh").read_text()
+    assert '[ "$(id -u)" -ne 0 ]' in script
+    # the only Python it runs itself: isolated, from /
+    code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith("#") and "echo" not in l)
+    assert re.findall(r"(?:^|[ (])(\S*python3) (\S+)", code, re.M) == [("/usr/bin/python3", "-I")]
+    assert "PYLIB=$(cd / && /usr/bin/python3 -I -c" in script

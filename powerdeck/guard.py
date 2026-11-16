@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, replace
 
-from . import commands, engine, history
+from . import commands, desktop, engine, history
 from .profile import Profile, load_profiles
 from .runner import Runner, system_runner
 from .i18n import _
@@ -219,6 +219,11 @@ def remote_access_notes(run: Runner = system_runner) -> list[str]:
     if not running:
         notes.append("! The guard is not running, so closing the lid will drop RDP desktop sharing. "
                      "Start it: systemctl --user enable --now powerdeck-guard (or: powerdeck guard)")
+    if desktop.current() != desktop.GNOME:
+        if rdp_listening(run) is False:
+            notes.append(f"! Nothing listens on the RDP port {RDP_PORT}. On this desktop use xrdp "
+                         "(PowerDeck keeps the laptop awake; the RDP restart on lid close is GNOME-only).")
+        return notes
     if rdp_listening(run) is False:
         notes.append(f"! Nothing listens on the RDP port {RDP_PORT}, so remote desktop cannot connect. "
                      "GNOME may have moved it to another port when this one was busy. Restart it: "

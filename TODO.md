@@ -54,14 +54,21 @@ Drobnosti:
 
 - Diakritika cez RDP (á, í, ž…) chýba, keď je na notebooku aktívne rozloženie `gb`: gnome-remote-desktop hlási „No keycode found for keyval“. Prepnúť na `sk` alebo nastaviť rozloženie v RDP klientovi.
 
-## Kompatibilita s inými distribúciami (výsledok `scripts/compat-matrix.sh`, 2026-11-16)
+## Kompatibilita s inými distribúciami (výsledok `scripts/compat-matrix.sh`, 2026-11-16: všetky prešli)
 
-- [ ] **Fedora:** režim napájania cez D-Bus (`org.freedesktop.UPower.PowerProfiles`, ktorý poskytuje aj tuned-ppd) namiesto `powerprofilesctl`; balík `.rpm`.
-- [ ] **Linux Mint (Cinnamon):** gsettings kľúče Cinnamonu (`org.cinnamon.settings-daemon.plugins.power`, `org.cinnamon.desktop.screensaver`, `org.cinnamon.desktop.session`) alebo aspoň v GUI ukázať, čo na Cinnamone nefunguje.
-- [ ] **Manjaro/Arch:** balík (PKGBUILD).
-- [ ] Overiť vo VM: systemd/logind (veko), pkexec, strážcu a RDP na Debiane 13 a Fedore (cloud obrazy); Mint a Manjaro len z ISO.
+- [ ] Balíky `.rpm` (Fedora) a PKGBUILD (Arch/Manjaro); zatiaľ `scripts/install.sh`.
+- [ ] Overiť vo VM: systemd/logind (veko), pkexec, strážcu a RDP na Debiane 13 a Fedore (cloud obrazy); Mint, Manjaro a Zorin len z ISO. Na Mint overiť, že Cinnamon pri zatvorení veka naozaj nič nerobí (`lid-close-*-action nothing`).
+- [ ] Fedora: režim napájania cez tuned-ppd D-Bus overiť naživo (v kontajneri nebeží daemon; na Ubuntu hostiteľovi D-Bus cesta funguje).
 
 ## Hotové
+
+**Kompatibilita distribúcií (2026-11-16)**
+- Cinnamon (Linux Mint): nastavenia cez kľúče `org.cinnamon.*`, aj Cinnamonova akcia pri zatvorení veka.
+- Fedora: režim napájania cez D-Bus API (tuned-ppd nemá `powerprofilesctl`).
+- `powerdeck doctor`: čo na danom systéme funguje (OK/WARN/FAIL).
+- `scripts/install.sh [--uninstall]` pre Fedoru, Manjaro a iné ne-Debian systémy.
+- Zorin OS 18 (základ Ubuntu 24.04) v testovacej matici; Zorin OS 17 je príliš starý.
+- Matica teraz skúša aj skutočné apply/restore, inštaláciu, doctor a odinštalovanie bez zvyškov.
 
 **v1.0.0 (2026-11-16)** – prvé verejné vydanie
 - Prepnutie profilu na jeden klik (najprv sa vrátia zmeny predošlého profilu), „Ukončiť PowerDeck“ vráti Default; tlačidlá „Zapnúť Remote Work“ a „Obnoviť predošlý stav“ z okna odstránené.

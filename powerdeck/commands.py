@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from . import helper
+from . import desktop, helper
 from .profile import POWER_MODES
 
 # Fixed, root-owned path matched by the polkit policy (data/*.policy).
@@ -31,11 +31,13 @@ ENABLE_GUARD = ["systemctl", "--user", "enable", "--now", "powerdeck-guard.servi
 
 
 def gsettings_get(setting: tuple[str, str]) -> list[str]:
-    return ["gsettings", "get", *setting]
+    schema, key = setting
+    return ["gsettings", "get", desktop.schema(schema), key]
 
 
 def gsettings_set(setting: tuple[str, str], value) -> list[str]:
-    return ["gsettings", "set", *setting, str(value)]
+    schema, key = setting
+    return ["gsettings", "set", desktop.schema(schema), key, str(value)]
 
 
 def bool_value(on: bool) -> str:
@@ -85,7 +87,19 @@ def autoconnect(connection: str, auto: str, priority: str) -> list[str]:
             "connection.autoconnect", auto, "connection.autoconnect-priority", priority]
 
 
-def power_mode(mode: str) -> list[str]:
+# power-profiles-daemon and tuned-ppd (Fedora) share this D-Bus API; Fedora has no powerprofilesctl
+_PP = ["--system", "--dest", "org.freedesktop.UPower.PowerProfiles",
+       "--object-path", "/org/freedesktop/UPower/PowerProfiles", "--method"]
+GET_POWER_MODE = ["powerprofilesctl", "get"]
+GET_POWER_MODE_DBUS = ["gdbus", "call", *_PP, "org.freedesktop.DBus.Properties.Get",
+                       "org.freedesktop.UPower.PowerProfiles", "ActiveProfile"]
+_SET_POWER_MODE_DBUS = ["gdbus", "call", *_PP, "org.freedesktop.DBus.Properties.Set",
+                        "org.freedesktop.UPower.PowerProfiles", "ActiveProfile"]
+
+
+def power_mode(mode: str, dbus: bool = False) -> list[str]:
+    if dbus:
+        return [*_SET_POWER_MODE_DBUS, f"<'{mode}'>"]
     return ["powerprofilesctl", "set", mode]
 
 
@@ -143,6 +157,8 @@ def allowed_as_root(argv: list[str]) -> bool:
                     and _NM_PRIORITY_RE.fullmatch(prio) is not None)
         case ["powerprofilesctl", "set", mode]:
             return mode in POWER_MODES
+        case [*head, variant] if head == _SET_POWER_MODE_DBUS:
+            return variant in [f"<'{m}'>" for m in POWER_MODES]
         case ["rfkill", "block" | "unblock", "bluetooth"]:
             return True
         case ["brightnessctl", "set", value]:

@@ -568,7 +568,7 @@ def test_tray_without_a_watcher_is_off():
 def test_guard_starts_with_the_graphical_session():
     unit = (ROOT / "data/powerdeck-guard.service").read_text()
     assert "WantedBy=graphical-session.target" in unit and "ConditionUser=!@system" in unit
-    deb = (ROOT / "scripts/build-deb.sh").read_text()
+    deb = (ROOT / "scripts/stage.sh").read_text()
     assert "graphical-session.target.wants/powerdeck-guard.service" in deb
     auto = (ROOT / "data/io.github.powerdeck.PowerDeck-autostart.desktop").read_text()
     assert "Exec=powerdeck-gtk --background" in auto and "TryExec=powerdeck-gtk" in auto

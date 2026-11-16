@@ -14,24 +14,25 @@ Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mod
 
 ## Requirements and compatibility
 
-Tested on **Ubuntu 26.04 with GNOME** (ThinkPad T14s Gen 4, Intel) and in an Ubuntu VM; other systems are untested. The `.deb` is for Debian/Ubuntu.
+Used daily on **Ubuntu 26.04 with GNOME** (ThinkPad T14s Gen 4, Intel) and tested in an Ubuntu VM. Desktops: **GNOME** (Ubuntu, Debian, Fedora, Manjaro, Zorin OS) and **Cinnamon** (Linux Mint; PowerDeck changes Cinnamon's own keys there, including its lid action). `powerdeck doctor` tells what works on a given system.
 
-`scripts/compat-matrix.sh` checks other distributions in containers (library versions, tools, GNOME settings keys, tests, CLI plan, headless GUI, `.deb` install/remove). It does not cover systemd/logind, pkexec, the lid or RDP, which need a real session. Result 2026-11-16:
+`scripts/compat-matrix.sh` checks other distributions in containers: tests, CLI plan, a real apply + restore of the desktop settings, headless GUI, install (`.deb` or `scripts/install.sh`), `powerdeck doctor` and removal without leftovers. It does not cover systemd/logind, pkexec, the lid or RDP, which need a real session. Result 2026-11-16 — all pass:
 
-| Distribution | Result |
-|---|---|
-| Debian 13 (GNOME) | everything passes, `.deb` installs and removes |
-| Fedora 45 (GNOME) | app, tests and GUI pass; **power mode is skipped**: Fedora ships tuned-ppd without `powerprofilesctl` (install `power-profiles-daemon` instead); no `.deb` |
-| Manjaro (GNOME) | everything passes; no package yet, run from source |
-| Linux Mint 22.2 (Cinnamon) | `.deb`, app and GUI work, but Cinnamon has its own settings: auto-suspend, screen lock/blank, night light and remote desktop are **not** applied (or change GNOME keys Cinnamon ignores). Lid, Wi‑Fi, power mode, Bluetooth and CPU work |
+| Distribution | Install | Notes |
+|---|---|---|
+| Debian 13 (GNOME) | `.deb` | |
+| Ubuntu 24.04+ / Zorin OS 18 (GNOME) | `.deb` | Zorin OS has no container image; checked on its base Ubuntu 24.04 with GNOME and Zorin's session name. Zorin OS 17 (Ubuntu 22.04) is too old (GTK 4.6, libadwaita 1.1) |
+| Linux Mint 22 (Cinnamon) | `.deb` | Cinnamon keys for auto-suspend, screen blank/lock, night light and lid; remote desktop with xrdp (the guard's RDP restart on lid close is GNOME-only) |
+| Fedora 45 (GNOME) | `scripts/install.sh` | power mode through tuned-ppd's D-Bus API (Fedora has no `powerprofilesctl`) |
+| Manjaro (GNOME) | `scripts/install.sh` | |
 
 | Needs | For | Notes |
 |---|---|---|
 | systemd + logind, polkit (`pkexec`) | lid, suspend, admin changes | almost every distribution |
 | NetworkManager | Wi‑Fi powersave, tethering | |
-| power-profiles-daemon (`powerprofilesctl`) | power mode | Fedora 41+ ships tuned-ppd instead (untested) |
-| GNOME | idle/lock/display settings, desktop sharing (RDP), the guard's screensaver handling, top-bar icon (AppIndicator extension) | on KDE/Xfce only lid, Wi‑Fi and power mode would work |
-| Python 3.11+, GTK 4.10+, libadwaita 1.5+ | the app | Ubuntu 24.04+, Debian 13+, Fedora 40+ (not Debian 12) |
+| power-profiles-daemon or tuned-ppd | power mode | |
+| GNOME or Cinnamon | idle/lock/display settings, the guard's screensaver handling, top-bar icon (GNOME: AppIndicator extension) | desktop sharing (RDP) restart: GNOME only; on KDE/Xfce only lid, Wi‑Fi and power mode would work |
+| Python 3.11+, GTK 4.10+, libadwaita 1.5+ | the app | Ubuntu 24.04+, Debian 13+, Fedora 40+, Mint 22+, Zorin OS 18 (not Debian 12, Zorin OS 17) |
 | CPU | turbo: Intel and AMD; temperature regulation: RAPL power limits (Intel), otherwise the max-frequency cap | |
 
 ## Licence
@@ -52,6 +53,16 @@ Installs a root-owned `/usr/libexec/powerdeck-helper` and a polkit policy. The h
 scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb   # installs app, helper, polkit policy, desktop entry
 ```
 
+## Install on Fedora, Manjaro and other non-Debian systems
+
+```bash
+sudo scripts/install.sh                 # the same files as the .deb; run again to update
+powerdeck doctor                        # what works on this system
+sudo scripts/install.sh --uninstall     # restore settings, remove every installed file
+```
+
+Dependencies (Fedora): `python3-gobject gtk4 libadwaita NetworkManager polkit tuned-ppd` (or `power-profiles-daemon`); (Arch/Manjaro): `python-gobject python-cairo gtk4 libadwaita networkmanager polkit power-profiles-daemon`. The Python package goes into the system Python's site-packages; after a Python upgrade (e.g. 3.14 → 3.15) run `sudo scripts/install.sh` again.
+
 ## Uninstall
 
 `sudo apt remove powerdeck` (or `sudo scripts/install-helper.sh --uninstall`) first puts every setting back the way it was before PowerDeck (`powerdeck reset-all` for each user), stops the guard, then removes the files.
@@ -62,7 +73,7 @@ scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb   # installs app
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 python3 -m powerdeck.gtk_app        # GUI
 python3 -m powerdeck.cli monitor --csv out.csv --duration 60   # temperature/frequency/load/power log
-python3 -m powerdeck.cli list       # CLI: list | status | plan NAME | apply NAME | restore | snapshot | guard
+python3 -m powerdeck.cli list       # CLI: list | status | doctor | plan NAME | apply NAME | restore | snapshot | guard
 pytest                              # tests (fake system, no root needed)
 ```
 

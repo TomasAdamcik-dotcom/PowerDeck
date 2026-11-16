@@ -12,11 +12,11 @@ def capture_current(run: Runner = system_runner, name: str = "Default") -> Profi
         rc, out = run(commands.gsettings_get(setting))
         if rc == 0:
             auto[src] = backends._unquote(out) != "nothing"
-    rc, mode = run(["powerprofilesctl", "get"])
+    found = backends.read_power_mode(run)
     lid = backends.read_lid() or {k: "suspend" for k in commands.LID_ORDER}
     p = Profile(name=name, description="Snapshot of your system settings.", lid=lid,
                 automatic_suspend=auto, wifi_powersave="default",
-                power_mode=mode.strip() if rc == 0 and mode.strip() in POWER_MODES else None)
+                power_mode=found[0] if found and found[0] in POWER_MODES else None)
     rc, out = run(commands.gsettings_get(commands.LOCK_ENABLED))
     if rc == 0 and out.strip() in ("true", "false"):
         p.display["lock_screen"] = out.strip() == "true"

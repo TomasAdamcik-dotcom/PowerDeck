@@ -5,6 +5,7 @@ import glob
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from . import backends
 from .runner import Runner, system_runner
 
 if TYPE_CHECKING:
@@ -80,11 +81,11 @@ def read_status(run: Runner = system_runner, remote_login: bool = False) -> Stat
             if "wireless" in typ or "ethernet" in typ or "gsm" in typ:
                 conn = name
                 break
-    rc, pm = run(["powerprofilesctl", "get"])
+    pm = backends.read_power_mode(run)
     ssh = _count_lines(run, ["ss", "-Htn", "state", "established", "sport", "=", ":22"])
     rdp = _count_lines(run, ["ss", "-Htn", "state", "established", "sport", "=", ":3389"])
     sess = _count_lines(run, ["loginctl", "list-sessions", "--no-legend"])
-    return Status(pct, state, read_cpu_temp(), conn, pm if rc == 0 else None,
+    return Status(pct, state, read_cpu_temp(), conn, pm[0] if pm else None,
                   ssh, rdp, sess, read_wifi_powersave(run),
                   read_remote_login(run) if remote_login else None)
 
