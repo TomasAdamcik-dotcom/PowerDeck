@@ -581,3 +581,12 @@ def test_active_profile_ignores_a_non_string(tmp_path):
         assert engine.active_profile(f) is None
     f.write_text('{"profile": "Travel"}')
     assert engine.active_profile(f) == "Travel"
+
+
+def test_guard_notices_are_translated(monkeypatch):
+    monkeypatch.setenv("LANG", "sk_SK.UTF-8")
+    calls = []
+    run = lambda a: (calls.append(a), (0, ""))[1]
+    guard.low_battery_reaction(run, 15, sleep=lambda s: None)
+    note = next(c for c in calls if c[0] == "notify-send")
+    assert note[-2] == "PowerDeck: uspávam – slabá batéria" and "15 %" in note[-1]
