@@ -88,7 +88,9 @@ def test_next_level_steps():
     assert tl.next_level(0.5, 60, 65) == 0.52                   # clearly below: slow step up
     assert tl.next_level(0.5, 63, 65) == 0.5                    # within hysteresis: hold
     assert tl.next_level(0.5, 65.5, 65) == 0.48                 # just above: at least one step
-    assert tl.next_level(0.5, 75, 65) == 0.3                    # 10 °C above: ten steps
+    assert tl.next_level(0.5, 67, 65) == 0.46                   # 2 °C above: two steps
+    assert tl.next_level(0.5, 75, 65) == 0.42                   # 10 °C above: capped, no overshoot
+    assert tl.next_level(1.0, 82, 65) == 0.92                   # load spike: capped as well
     assert tl.next_level(0.15, 95, 65) == tl.LEVEL_MIN          # never below the floor
     assert tl.next_level(0.5, None, 65) == 0.5                  # no reading: hold
 
@@ -96,7 +98,7 @@ def test_next_level_steps():
 def test_hot_cpu_lowers_both_domains_and_stop_restores(sysfs):
     pc, th, st, _cr = sysfs
     before = limits(pc)
-    make_zone(th, 75)  # 10 °C over target → level 0.8 after one tick
+    make_zone(th, 75)  # 10 °C over target → capped step, level 0.92 after one tick
     seen = {}
     orig_restore = tl.restore
 
@@ -110,10 +112,10 @@ def test_hot_cpu_lowers_both_domains_and_stop_restores(sysfs):
         assert run(sysfs, 65, ticks=1) == 0
     finally:
         tl.restore = saved
-    assert seen["intel-rapl:0/constraint_0"] == 44 * W                 # 55 W × 0.8
-    assert seen["intel-rapl-mmio:0/constraint_0"] == 24 * W            # 30 W × 0.8
+    assert seen["intel-rapl:0/constraint_0"] == 50_600_000             # 55 W × 0.92
+    assert seen["intel-rapl-mmio:0/constraint_0"] == 27_600_000        # 30 W × 0.92
     assert seen["intel-rapl-mmio:0/constraint_2"] == 114 * W           # peak power untouched
-    assert seen["state"]["target"] == 65 and seen["state"]["limit"] == "24.0 W"
+    assert seen["state"]["target"] == 65 and seen["state"]["limit"] == "27.6 W"
     assert limits(pc) == before                                         # restored on exit
     assert not (st / "state.json").exists()
 
