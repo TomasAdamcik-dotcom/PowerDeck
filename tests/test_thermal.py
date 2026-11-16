@@ -84,21 +84,41 @@ def test_check_needs_a_sensor(sysfs, monkeypatch):
 
 # -- controller ---------------------------------------------------------------
 def test_next_level_steps():
-    assert tl.next_level(1.0, 60, 65) == 0.98 + 0.02            # cool: already at max
-    assert tl.next_level(0.5, 60, 65) == 0.52                   # clearly below: slow step up
-    assert tl.next_level(0.5, 63, 65) == 0.5                    # within hysteresis: hold
-    assert tl.next_level(0.5, 65.5, 65) == 0.48                 # just above: at least one step
-    assert tl.next_level(0.5, 67, 65) == 0.46                   # 2 °C above: two steps
-    assert tl.next_level(0.5, 75, 65) == 0.42                   # 10 °C above: capped, no overshoot
-    assert tl.next_level(1.0, 82, 65) == 0.92                   # load spike: capped as well
-    assert tl.next_level(0.15, 95, 65) == tl.LEVEL_MIN          # never below the floor
-    assert tl.next_level(0.5, None, 65) == 0.5                  # no reading: hold
+    assert tl.next_level(1.0, 60, 65) == 1.0                    # cool: already at max
+    assert tl.next_level(0.5, 55, 65, 55) == 0.55               # below target, steady: step up
+    assert tl.next_level(0.5, 65, 65, 65) == 0.5                # at target, steady: hold
+    assert tl.next_level(0.5, 75, 65, 75) == 0.45               # above, steady: step down
+    assert tl.next_level(0.5, 75, 65, 73) == 0.39               # above and rising: more
+    assert tl.next_level(0.5, 75, 65, 78) == 0.54               # above but falling fast: give back
+    assert tl.next_level(1.0, 94, 65) == 0.855                  # load spike, no trend yet
+    assert tl.next_level(0.5, 99, 65, 60) == 0.3                # never more than MAX_STEP
+    assert tl.next_level(0.15, 95, 65, 95) == tl.LEVEL_MIN      # never below the floor
+    assert tl.next_level(0.5, None, 65, 70) == 0.5              # no reading: hold
+
+
+def test_load_spike_does_not_overshoot_to_the_floor():
+    """A model of the T14s (die lags the limit by ~4 s): from a 94 °C spike the limit must not
+    fall to the floor, and the temperature must settle near the target."""
+    die, sink, level, prev, hist, temps, levels = 94.0, 55.0, 1.0, None, [1.0] * 3, [], []
+    for _tick in range(120):
+        temp = round(die)
+        level = tl.next_level(level, temp, 65, prev)
+        prev = temp
+        hist.append(level)
+        power = 30 * hist[-3]
+        for _ in range(20):
+            die += 0.1 * (power - (die - sink)) / 4
+            sink += 0.1 * ((die - sink) - (sink - 35) * 0.75) / 40
+        temps.append(temp)
+        levels.append(level)
+    assert min(levels) > 0.2
+    assert all(abs(t - 65) <= 2 for t in temps[60:])
 
 
 def test_hot_cpu_lowers_both_domains_and_stop_restores(sysfs):
     pc, th, st, _cr = sysfs
     before = limits(pc)
-    make_zone(th, 75)  # 10 °C over target → capped step, level 0.92 after one tick
+    make_zone(th, 75)  # 10 °C over target, no trend yet → level 0.95 after one tick
     seen = {}
     orig_restore = tl.restore
 
@@ -112,10 +132,10 @@ def test_hot_cpu_lowers_both_domains_and_stop_restores(sysfs):
         assert run(sysfs, 65, ticks=1) == 0
     finally:
         tl.restore = saved
-    assert seen["intel-rapl:0/constraint_0"] == 50_600_000             # 55 W × 0.92
-    assert seen["intel-rapl-mmio:0/constraint_0"] == 27_600_000        # 30 W × 0.92
+    assert seen["intel-rapl:0/constraint_0"] == 52_250_000             # 55 W × 0.95
+    assert seen["intel-rapl-mmio:0/constraint_0"] == 28_500_000        # 30 W × 0.95
     assert seen["intel-rapl-mmio:0/constraint_2"] == 114 * W           # peak power untouched
-    assert seen["state"]["target"] == 65 and seen["state"]["limit"] == "27.6 W"
+    assert seen["state"]["target"] == 65 and seen["state"]["limit"] == "28.5 W"
     assert limits(pc) == before                                         # restored on exit
     assert not (st / "state.json").exists()
 

@@ -26,13 +26,21 @@ Actuator, first one available:
 2. **scaling_max_freq** of every core (AMD or anything without writable RAPL). Floor
    `scaling_min_freq`.
 
-Controller (level `f`, original limit × `f`):
+Controller (level `f`, original limit × `f`), a PI controller in velocity form per 2 s tick:
 
-- temperature above target: `f -= min(0.08, 0.02 × max(1, T − target))` (proportional, but at
-  most 0.08 per tick: without the cap the load spike at start, 82 °C, dropped the T14s to the
-  5 W floor for 20 s)
-- temperature below target − 3 °C: `f += 0.02` (slow, about 1 W / 100 MHz per 2 s)
-- otherwise: hold.
+    Δf = −0.005 × (T − target) − 0.03 × (T − T_previous),   |Δf| ≤ 0.2
+
+The second term stops cutting power once the temperature already falls. The package lags the
+power limit by a few seconds; the first, purely proportional controller (and a variant with a
+capped step) kept cutting until the 5 W floor after a load spike (82–94 °C) on the T14s. Gains
+were chosen on a two-node thermal model fitted to those runs (`test_load_spike_does_not_overshoot_to_the_floor`);
+in the model the limit stays above ~8 W after a 94 °C spike (before: the 5 W floor) and the
+temperature settles within 1 °C, at the price of ~20 s above 72 °C right after the spike;
+higher gains oscillated when the lag was longer.
+
+Side effects: a temperature that rises below the target already trims the limit a little, and
+a steady 1 °C above target lowers it only slowly (0.005 per tick); 10 °C above still reaches the
+floor in about 36 s.
 
 Each tick it also checks the value it wrote last. If firmware (power profile change, resume)
 raised it, the new value becomes the original. If firmware lowered it (lap mode, power profile),

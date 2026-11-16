@@ -30,10 +30,14 @@ UNLIMITED_KHZ = 100_000_000  # same as helper.UNLIMITED_KHZ
 CPU_ZONE_TYPES = ("x86_pkg_temp", "coretemp", "k10temp", "cpu", "cpu-thermal", "acpitz")
 
 INTERVAL_S = 2
-LEVEL_MIN, LEVEL_STEP, HYSTERESIS_C = 0.1, 0.02, 3
-# At most this much down per tick: the first seconds of a load spike the package temperature
-# far above target (turbo burst) and a purely proportional step overshot to the 5 W floor.
-LEVEL_MAX_DOWN = 0.08
+# PI controller in velocity form, per 2 s tick (level = fraction of the original limit):
+#   Δlevel = -KI·(T − target) − KP·(T − T_previous), at most ±MAX_STEP
+# The KP term stops cutting power once the temperature is already falling: the package lags
+# the power limit by a few seconds, and a purely proportional controller kept cutting until the
+# 5 W floor (seen on the T14s: 82-94 °C load spike → 5-6 W for ~20 s). Gains chosen on a model
+# fitted to those runs: the limit stays above ~8 W after the spike and settles within 1 °C,
+# at the price of ~20 s above 72 °C right after the spike. Higher gains oscillated.
+LEVEL_MIN, KI, KP, MAX_STEP = 0.1, 0.005, 0.03, 0.2
 
 
 def valid_target(s) -> bool:
@@ -138,15 +142,13 @@ def read_temp(root: str = THERMAL) -> float | None:
     return max(temps) if temps else None
 
 
-def next_level(level: float, temp: float | None, target: int) -> float:
-    """Proportional (but capped) step down when hot, slow step up when clearly below target."""
+def next_level(level: float, temp: float | None, target: int, prev: float | None = None) -> float:
+    """One PI step: down while above target (less once it is already falling), up below it."""
     if temp is None:
         return level
-    if temp > target:
-        level -= min(LEVEL_MAX_DOWN, LEVEL_STEP * max(1.0, temp - target))
-    elif temp < target - HYSTERESIS_C:
-        level += LEVEL_STEP
-    return round(min(1.0, max(LEVEL_MIN, level)), 3)
+    trend = 0.0 if prev is None else temp - prev
+    delta = max(-MAX_STEP, min(MAX_STEP, -KI * (temp - target) - KP * trend))
+    return round(min(1.0, max(LEVEL_MIN, level + delta)), 3)
 
 
 def apply_level(knobs: list[Knob], level: float) -> list[int]:
@@ -237,14 +239,15 @@ def run(target: int, state_dir: str = STATE_DIR, powercap: str = POWERCAP, cpu_r
         return 3
     print(f"regulating CPU to {target} °C via {kind} limits ({len(knobs)} knobs)", file=sys.stderr)
     originals = {k.path: k.original for k in knobs}  # as found at start, for --restore after a crash
-    level, n = 1.0, 0
+    level, n, prev = 1.0, 0, None
     # before the first write, so a daemon killed at any point can be undone by --restore
     write_state(state_dir, {"target": target, "kind": kind, "level": level, "temp_c": None,
                             "limit": "", "originals": originals})
     try:
         while ticks is None or n < ticks:
             temp = read_temp(thermal)
-            level = next_level(level, temp, target)
+            level = next_level(level, temp, target, prev)
+            prev = temp  # None after a failed reading: no trend across the gap
             values = apply_level(knobs, level)
             originals.update({k.path: k.original for k in knobs})
             write_state(state_dir, {"target": target, "kind": kind, "level": level, "temp_c": temp,
