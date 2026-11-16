@@ -21,6 +21,13 @@ install -m 0644 data/io.github.powerdeck.PowerDeck.desktop "$OUT/usr/share/appli
 install -m 0644 data/io.github.powerdeck.PowerDeck.metainfo.xml "$OUT/usr/share/metainfo/"
 install -m 0644 data/io.github.powerdeck.PowerDeck.svg "$OUT/usr/share/icons/hicolor/scalable/apps/"
 install -m 0644 data/powerdeck-guard.service "$OUT/usr/lib/systemd/user/"
+# enabled for every user by default (like a vendor preset); a user can opt out with
+# `systemctl --user mask powerdeck-guard`. Shipped as a symlink, so no maintainer-script code.
+mkdir -p "$OUT/usr/lib/systemd/user/graphical-session.target.wants" "$OUT/etc/xdg/autostart"
+ln -s ../powerdeck-guard.service "$OUT/usr/lib/systemd/user/graphical-session.target.wants/powerdeck-guard.service"
+# top-bar icon at login (GNOME "Startup Apps" can turn it off)
+install -m 0644 data/io.github.powerdeck.PowerDeck-autostart.desktop "$OUT/etc/xdg/autostart/io.github.powerdeck.PowerDeck.desktop"
+echo /etc/xdg/autostart/io.github.powerdeck.PowerDeck.desktop > "$OUT/DEBIAN/conffiles"
 printf '#!/usr/bin/python3\nimport sys\nfrom powerdeck.cli import main\nsys.exit(main())\n' > "$OUT/usr/bin/powerdeck"
 printf '#!/usr/bin/python3\nimport sys\nfrom powerdeck.gtk_app import main\nsys.exit(main())\n' > "$OUT/usr/bin/powerdeck-gtk"
 chmod 0755 "$OUT/usr/bin/powerdeck" "$OUT/usr/bin/powerdeck-gtk"

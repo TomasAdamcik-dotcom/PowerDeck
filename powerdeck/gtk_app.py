@@ -6,6 +6,7 @@ results come back to the GTK main loop with GLib.idle_add.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 
@@ -13,7 +14,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import backends, engine  # noqa: E402
 from .describe import Item, describe  # noqa: E402
@@ -24,6 +25,7 @@ from .logs import setup_logging  # noqa: E402
 from .monitor import Monitor  # noqa: E402
 from .profile import load_profiles  # noqa: E402
 from .status import Status, profile_thermal_level, read_status  # noqa: E402
+from .tray import Tray  # noqa: E402
 
 APP_ID = "io.github.powerdeck.PowerDeck"
 STATUS_INTERVAL_S = 10
@@ -71,6 +73,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.active_name: str | None = None
         self._status_pending = False
         self._planning = False
+        self._running = False
 
         header = Adw.HeaderBar()
         split = Adw.NavigationSplitView()
@@ -81,6 +84,10 @@ class MainWindow(Adw.ApplicationWindow):
         view.add_top_bar(header)
         view.set_content(self.toasts)
         self.set_content(view)
+
+        # with the top-bar icon, closing the window only hides it (the app keeps running)
+        self.set_hide_on_close(getattr(app, "tray", None) is not None)
+        self.connect("notify::visible", lambda *_a: self.get_visible() and self.refresh_status())
 
         self.refresh_status()
         self._select_active()
@@ -260,7 +267,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     # -- status and monitor -----------------------------------------------------
     def _tick(self):
-        self.refresh_status()
+        if self.get_visible():  # hidden in the top bar: read nothing, save power
+            self.refresh_status()
         return True
 
     def refresh_status(self):
@@ -290,6 +298,8 @@ class MainWindow(Adw.ApplicationWindow):
             self.mbars[key].set_value(max(0, min(100, bar or 0)))
 
     def _monitor_tick(self):
+        if not self.get_visible():
+            return True
         s = self.monitor.sample()
         na = _("unknown")
         # thermal level against the active profile's limits (defaults without a thermal guard)
@@ -348,15 +358,22 @@ class MainWindow(Adw.ApplicationWindow):
         self._run(engine.restore_last, _("Restored previous settings."))
 
     def _run(self, fn, ok_msg):
+        if self._running:  # e.g. a double click or several tray clicks: one apply/restore at a time
+            return
+        self._running = True
         _in_background(fn, lambda errs: self._done(errs, ok_msg),
                        lambda e: self._done([str(e)], ok_msg))
 
     def _done(self, errs, ok_msg):
+        self._running = False
         if errs:
             self.error(_("Something went wrong"), "\n".join(errs))
         else:
             self.toast(ok_msg)
         self.refresh_status()
+        tray = getattr(self.get_application(), "tray", None)
+        if tray is not None:
+            tray.refresh()
 
     def toast(self, msg):
         self.toasts.add_toast(Adw.Toast(title=msg))
@@ -368,8 +385,13 @@ class MainWindow(Adw.ApplicationWindow):
 
 
 class App(Adw.Application):
+    """One instance per session. ``--background`` (login autostart) shows only the top-bar
+    icon; starting PowerDeck again, or "Open" in the icon's menu, shows the window."""
+
     def __init__(self):
-        super().__init__(application_id=APP_ID)
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.tray: Tray | None = None
+        self._tray_active: str | None = None
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -383,9 +405,50 @@ class App(Adw.Application):
             css.load_from_data(COMPACT_CSS, -1)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._start_tray()
+
+    def _start_tray(self):
+        data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        tray = Tray(self._tray_state, self.activate, self._tray_profile, self._tray_restore, self.quit,
+                    icon_theme_path=data if os.path.isdir(data) else "")
+        if tray.start():
+            self.tray = tray
+            self.hold()  # keep running without a window
+            self._tray_active = engine.active_profile()
+            GLib.timeout_add_seconds(STATUS_INTERVAL_S, self._watch_active)
+
+    @staticmethod
+    def _tray_state():
+        return [p.name for p in load_profiles()], engine.active_profile()
+
+    def _watch_active(self):
+        """The CLI or the guard may switch profiles too: keep the icon's menu current."""
+        active = engine.active_profile()
+        if active != self._tray_active:
+            self._tray_active = active
+            self.tray.refresh()
+        return True
+
+    def _window(self) -> MainWindow:
+        win = next((w for w in self.get_windows() if isinstance(w, MainWindow)), None) or MainWindow(self)
+        win.present()
+        return win
+
+    def _tray_profile(self, name: str):
+        win = self._window()
+        win.reload_profiles()
+        win._confirm(win._find(name))  # same confirmation dialog as the Apply button
+
+    def _tray_restore(self):
+        self._window()._on_restore()
+
+    def do_command_line(self, cmd):
+        if "--background" not in cmd.get_arguments()[1:]:
+            self.activate()
+        return 0
 
     def do_activate(self):
-        (self.props.active_window or MainWindow(self)).present()
+        self._window()
 
 
 def main() -> int:

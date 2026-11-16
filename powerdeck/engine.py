@@ -251,6 +251,7 @@ def reset_all(run: Runner = system_runner, backup_dir: Path | None = None, only:
 
 def active_profile(active_file: Path | None = None) -> str | None:
     try:
-        return json.loads(_active_file(active_file).read_text())["profile"]
+        name = json.loads(_active_file(active_file).read_text())["profile"]
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    return name if isinstance(name, str) else None

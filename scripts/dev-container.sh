@@ -38,6 +38,8 @@ cmd_deb() {
         test \"\$(stat -c %U:%a /usr/libexec/powerdeck-helper)\" = root:755
         test \"\$(stat -c %U:%a /usr/libexec/powerdeck-thermal)\" = root:755
         test -f /usr/lib/systemd/system/powerdeck-thermal@.service
+        test \"\$(readlink -f /usr/lib/systemd/user/graphical-session.target.wants/powerdeck-guard.service)\" = /usr/lib/systemd/user/powerdeck-guard.service
+        grep -qx 'Exec=powerdeck-gtk --background' /etc/xdg/autostart/io.github.powerdeck.PowerDeck.desktop
         python3 -c \"import xml.etree.ElementTree as E; p=[a.text for a in E.parse('/usr/share/polkit-1/actions/io.github.powerdeck.policy').iter('annotate') if a.get('key')=='org.freedesktop.policykit.exec.path']; assert '/usr/libexec/powerdeck-helper' in p, p\"
         su dev -c 'cd / && powerdeck list >/dev/null && powerdeck plan Default >/dev/null'
         /usr/libexec/powerdeck-helper set-lid ignore ignore ignore
@@ -47,6 +49,7 @@ cmd_deb() {
         test ! -e /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
         test ! -e /usr/libexec/powerdeck-helper
         test ! -e /usr/libexec/powerdeck-thermal
+        test ! -e /usr/lib/systemd/user/graphical-session.target.wants/powerdeck-guard.service
         set +x
         echo 'deb: OK'"
 }

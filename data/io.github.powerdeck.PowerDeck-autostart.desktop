@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PowerDeck
+Comment=PowerDeck icon in the top bar
+Comment[sk]=Ikona PowerDecku v hornej lište
+TryExec=powerdeck-gtk
+Exec=powerdeck-gtk --background
+Icon=io.github.powerdeck.PowerDeck
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5

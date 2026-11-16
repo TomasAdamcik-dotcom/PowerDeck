@@ -42,6 +42,8 @@ SK = {
     "Save": "Uložiť",
     "Active profile: {}": "Aktívny profil: {}",
     "No profile activated": "Žiadny profil nie je aktivovaný",
+    "Open PowerDeck": "Otvoriť PowerDeck",
+    "Quit PowerDeck": "Ukončiť PowerDeck",
     "Thermal guard: notification at {} °C; at {} °C it notifies and suspends the laptop": "Strážca teploty: upozornenie pri {} °C; pri {} °C upozorní a notebook uspí",
     "The guard service runs `powerdeck guard`. At the critical temperature (confirmed by a second reading 10 s later) it sends a notification, waits 5 s and runs `systemctl suspend` (if an app blocks sleep: pkexec /usr/libexec/powerdeck-suspend, which ignores inhibitors). If the profile keeps the laptop awake with the lid closed, it also suspends it at 15 % battery when not charging. Enable it once.": "Služba strážcu spúšťa `powerdeck guard`. Pri kritickej teplote (potvrdenej druhým meraním o 10 s) pošle upozornenie, počká 5 s a spustí `systemctl suspend` (ak uspanie blokuje nejaká aplikácia: pkexec /usr/libexec/powerdeck-suspend, ktorý blokovanie ignoruje). Ak profil nechá notebook bežať so zavretým vekom, uspí ho aj pri 15 % batérie, keď sa nenabíja. Treba ju raz povoliť.",
     "PowerDeck: suspending – maximum temperature reached": "PowerDeck: uspávam – dosiahnutá maximálna teplota",
