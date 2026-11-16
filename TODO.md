@@ -56,11 +56,15 @@ Drobnosti:
 
 ## Kompatibilita s inými distribúciami (výsledok `scripts/compat-matrix.sh`, 2026-11-16: všetky prešli)
 
-- [ ] Balíky `.rpm` (Fedora) a PKGBUILD (Arch/Manjaro); zatiaľ `scripts/install.sh`.
-- [ ] Overiť vo VM: systemd/logind (veko), pkexec, strážcu a RDP na Debiane 13 a Fedore (cloud obrazy); Mint, Manjaro a Zorin len z ISO. Na Mint overiť, že Cinnamon pri zatvorení veka naozaj nič nerobí (`lid-close-*-action nothing`).
-- [ ] Fedora: režim napájania cez tuned-ppd D-Bus overiť naživo (v kontajneri nebeží daemon; na Ubuntu hostiteľovi D-Bus cesta funguje).
+- [ ] Overiť vo VM s plochou: RDP na Debiane 13 a Fedore; Mint, Manjaro a Zorin len z ISO. Na Mint overiť, že Cinnamon pri zatvorení veka naozaj nič nerobí (`lid-close-*-action nothing`).
 
 ## Hotové
+
+**Balíky a VM testy (2026-11-16, v1.1.0)**
+- `.rpm` (`packaging/rpm/powerdeck.spec`, `scripts/build-rpm.sh`) a PKGBUILD (`packaging/arch/`, `scripts/build-arch.sh`); odstránenie balíka najprv vráti nastavenia.
+- `scripts/distro-vm.sh debian|fedora test`: veko cez logind, pkexec + helper, režim napájania (Fedora: tuned-ppd naživo), strážca ako user služba, odinštalovanie bez zvyškov – všetko prešlo.
+- Debian: `rfkill` je v `/usr/sbin` mimo PATH bežného používateľa – runner ho hľadá aj tam.
+- Pred vydaním: v PKGBUILD nahradiť `sha256sums=('SKIP')` skutočným súčtom tarballu.
 
 **Kompatibilita distribúcií (2026-11-16)**
 - Cinnamon (Linux Mint): nastavenia cez kľúče `org.cinnamon.*`, aj Cinnamonova akcia pri zatvorení veka.

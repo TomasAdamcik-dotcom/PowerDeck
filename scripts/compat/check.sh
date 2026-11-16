@@ -76,6 +76,22 @@ if command -v dpkg-deb >/dev/null && command -v apt-get >/dev/null; then
         r FAIL ".deb install"; tail -8 /tmp/deb.log
     fi
 else
+    # the distribution's own package: .rpm (dnf) or Arch package (pacman)
+    if command -v dnf >/dev/null; then
+        build="scripts/build-rpm.sh"; inst="dnf -y -q install ./dist/powerdeck-*.rpm"; rm_="dnf -y -q remove powerdeck"; kind=.rpm
+    else
+        chown -R dev /tmp/src
+        build="su dev -c scripts/build-arch.sh"; inst="pacman -U --noconfirm ./dist/powerdeck-*.pkg.tar.zst"; rm_="pacman -R --noconfirm powerdeck"; kind="Arch package"
+    fi
+    if $build >/tmp/build.log 2>&1 && $inst >/tmp/pkg.log 2>&1; then
+        r OK "$kind builds and installs (dependencies resolve)"
+        as_dev "cd / && powerdeck list >/dev/null" && r OK "installed powerdeck runs" || r FAIL "installed powerdeck runs"
+        doctor
+        $rm_ >/tmp/pkgrm.log 2>&1 && r OK "$kind removes" || { r FAIL "$kind removes"; tail -5 /tmp/pkgrm.log; }
+        leftovers "$kind removal"
+    else
+        r FAIL "$kind build/install"; tail -8 /tmp/build.log /tmp/pkg.log 2>/dev/null
+    fi
     if scripts/install.sh >/tmp/install.log 2>&1 && scripts/install.sh >>/tmp/install.log 2>&1; then
         r OK "install.sh installs (and updates): $(head -1 /tmp/install.log)"
         as_dev "cd / && powerdeck list >/dev/null" && r OK "installed powerdeck runs" || r FAIL "installed powerdeck runs"

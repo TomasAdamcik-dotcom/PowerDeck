@@ -94,3 +94,48 @@ def test_install_script_needs_root_and_isolates_python():
     code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith("#") and "echo" not in l)
     assert re.findall(r"(?:^|[ (])(\S*python3) (\S+)", code, re.M) == [("/usr/bin/python3", "-I")]
     assert "PYLIB=$(cd / && /usr/bin/python3 -I -c" in script
+
+
+def _version():
+    return re.search(r'^version = "(.+?)"', (ROOT / "pyproject.toml").read_text(), re.M).group(1)
+
+
+def test_packages_have_the_project_version():
+    import powerdeck
+    v = _version()
+    assert powerdeck.__version__ == v
+    assert re.search(rf"^Version:\s+{re.escape(v)}$", (ROOT / "packaging/rpm/powerdeck.spec").read_text(), re.M)
+    assert f"pkgver={v}\n" in (ROOT / "packaging/arch/PKGBUILD").read_text()
+    assert f'<release version="{v}"' in (ROOT / "data/io.github.powerdeck.PowerDeck.metainfo.xml").read_text()
+
+
+def _scriptlet_lines(text):
+    return [l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("#")]
+
+
+def test_package_scripts_only_run_the_root_owned_reset_and_fixed_commands():
+    """rpm/pacman maintainer scripts: the same few fixed commands as the .deb, nothing from $HOME."""
+    allowed = {"/usr/libexec/powerdeck-uninstall-reset || :", "/usr/libexec/powerdeck-uninstall-reset || true",
+               "systemctl stop 'powerdeck-thermal@*.service' >/dev/null 2>&1 || :",
+               "systemctl stop 'powerdeck-thermal@*.service' >/dev/null 2>&1 || true",
+               "rm -f /etc/systemd/logind.conf.d/99-powerdeck-lid.conf",
+               "systemctl daemon-reload >/dev/null 2>&1 || :", "systemctl daemon-reload >/dev/null 2>&1 || true"}
+    spec = (ROOT / "packaging/rpm/powerdeck.spec").read_text()
+    # every section that rpm runs as root on the target system: only these three, checked below
+    run_as_root = re.findall(r"^%((?:pre|post|preun|postun)(?:trans|untrans)?|(?:file|transfile)?trigger\w*|"
+                             r"verifyscript)\b", spec, re.M)
+    assert sorted(run_as_root) == ["post", "postun", "preun"], run_as_root
+    for sec in ("post", "preun", "postun"):
+        body = re.search(rf"^%{sec}\n(.*?)(?=^%)", spec, re.M | re.S).group(1)
+        cmds = [l for l in _scriptlet_lines(body) if not re.fullmatch(r'if \[ "\$1" -eq 0 \]; then|fi', l)]
+        assert cmds and set(cmds) <= allowed, (sec, cmds)
+    inst = (ROOT / "packaging/arch/powerdeck.install").read_text()
+    assert set(re.findall(r"^(\w+)\(\)", inst, re.M)) == {"post_install", "post_upgrade", "pre_remove", "post_remove"}
+    cmds = [l for l in _scriptlet_lines(inst) if not re.fullmatch(r"\w+\(\) \{|\}|post_install", l)]
+    assert cmds and set(cmds) <= allowed, cmds
+
+
+def test_uninstall_reset_writes_no_bytecode_as_root():
+    script = (ROOT / "scripts/uninstall-reset.sh").read_text()
+    assert re.search(r"^export PYTHONDONTWRITEBYTECODE=1$", script, re.M)
+    assert script.index("PYTHONDONTWRITEBYTECODE") < script.index('"$PY"')

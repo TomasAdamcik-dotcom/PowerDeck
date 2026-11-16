@@ -23,8 +23,8 @@ Used daily on **Ubuntu 26.04 with GNOME** (ThinkPad T14s Gen 4, Intel) and teste
 | Debian 13 (GNOME) | `.deb` | |
 | Ubuntu 24.04+ / Zorin OS 18 (GNOME) | `.deb` | Zorin OS has no container image; checked on its base Ubuntu 24.04 with GNOME and Zorin's session name. Zorin OS 17 (Ubuntu 22.04) is too old (GTK 4.6, libadwaita 1.1) |
 | Linux Mint 22 (Cinnamon) | `.deb` | Cinnamon keys for auto-suspend, screen blank/lock, night light and lid; remote desktop with xrdp (the guard's RDP restart on lid close is GNOME-only) |
-| Fedora 45 (GNOME) | `scripts/install.sh` | power mode through tuned-ppd's D-Bus API (Fedora has no `powerprofilesctl`) |
-| Manjaro (GNOME) | `scripts/install.sh` | |
+| Fedora 45 (GNOME) | `.rpm` (or `scripts/install.sh`) | power mode through tuned-ppd's D-Bus API (Fedora has no `powerprofilesctl`) |
+| Manjaro / Arch (GNOME) | PKGBUILD (or `scripts/install.sh`) | |
 
 | Needs | For | Notes |
 |---|---|---|
@@ -53,7 +53,16 @@ Installs a root-owned `/usr/libexec/powerdeck-helper` and a polkit policy. The h
 scripts/build-deb.sh && sudo apt install ./dist/powerdeck_*.deb   # installs app, helper, polkit policy, desktop entry
 ```
 
-## Install on Fedora, Manjaro and other non-Debian systems
+## Build a .rpm (Fedora) or an Arch/Manjaro package
+
+```bash
+scripts/build-rpm.sh && sudo dnf install ./dist/powerdeck-*.noarch.rpm      # Fedora (rpmbuild, else in a Fedora container)
+scripts/build-arch.sh && sudo pacman -U ./dist/powerdeck-*-any.pkg.tar.zst  # Arch/Manjaro (makepkg, else in a container)
+```
+
+The spec is `packaging/rpm/powerdeck.spec`, the PKGBUILD `packaging/arch/`. Both install the same files as the `.deb` (`scripts/stage.sh`), and removing the package puts every setting back first, like the `.deb`. The PKGBUILD downloads the release tarball from GitHub; for a release replace `sha256sums=('SKIP')` with the tarball's sum.
+
+## Install on other systems without a package
 
 ```bash
 sudo scripts/install.sh                 # the same files as the .deb; run again to update
@@ -99,6 +108,16 @@ scripts/dev-vm.sh stop
 ```
 
 The VM runs a real GNOME 50 Wayland session (auto-login), logind, polkit and systemd user services, so `pkexec`, the lid drop-in, the guard service and `apt remove` can be tested end to end. Limits: QEMU's display is a `Virtual` connector, which GNOME treats as an external monitor – gsd-power then blocks the lid switch itself, so the "lid closed → screensaver → RDP drops" path only happens on a real laptop (stop GNOME with `sudo systemctl isolate multi-user.target` to test logind alone). No battery, turbo or real Wi-Fi. After a suspend/resume the virtio GPU can hang the guest when GNOME restarts; then `kill` QEMU (`~/.local/share/powerdeck-vm/qemu.pid`) and `start` again.
+
+### Debian and Fedora VMs (system side, no desktop)
+
+```bash
+scripts/distro-vm.sh debian create      # or fedora: cloud image (checksum verified), packages, fake lid
+scripts/distro-vm.sh debian test        # build + install the native package, then lid, pkexec, helper, power mode, guard, removal
+scripts/distro-vm.sh debian ssh|stop|destroy
+```
+
+Headless, without GNOME, so logind acts on the lid itself. Result 2026-11-16 on Debian 13 and Fedora 45 – all pass: the lid suspends without PowerDeck and keeps the VM running with RemoteWork, the power mode changes (Fedora through tuned-ppd) and `restore` puts mode and lid back, the guard runs as a user service, and removing the package with a profile active restores everything and leaves no files. After a suspend the VM is booted again rather than woken (these guests reset themselves shortly after an S3 wake-up).
 
 ## Remote desktop with the lid closed
 

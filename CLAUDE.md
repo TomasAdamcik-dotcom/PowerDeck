@@ -10,7 +10,8 @@ Root code is: `powerdeck/helper.py` (→ `/usr/libexec/powerdeck-helper`), `data
 `powerdeck/thermal_limit.py` (→ `/usr/libexec/powerdeck-thermal`, run by
 `data/powerdeck-thermal@.service`), `data/io.github.powerdeck.policy`, `scripts/uninstall-reset.sh`, the root pass of
 `powerdeck reset-all --only system` (`engine.reset_all`, `commands.allowed_as_root`), the Debian
-maintainer scripts written by `scripts/build-deb.sh`, `scripts/install-helper.sh`, and
+maintainer scripts written by `scripts/build-deb.sh`, the scriptlets in `packaging/rpm/powerdeck.spec`
+and `packaging/arch/powerdeck.install`, `scripts/install-helper.sh`, and
 `scripts/install.sh` (with `scripts/stage.sh`, the installed file layout, and
 `scripts/install-paths.sh`, the paths it may touch).
 

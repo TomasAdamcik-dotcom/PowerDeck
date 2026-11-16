@@ -128,3 +128,36 @@ def test_doctor_warns_about_missing_pieces(monkeypatch, tmp_path):
 def test_doctor_toolkit_check_runs_here():
     from powerdeck import doctor
     assert [l for l, t in doctor.check_toolkit() if l == doctor.FAIL] == []
+
+
+def test_runner_finds_sbin_commands_missing_from_path(monkeypatch, tmp_path):
+    """Debian: rfkill is in /usr/sbin, which a normal user's PATH lacks."""
+    from powerdeck import runner
+    sbin = tmp_path / "sbin"
+    sbin.mkdir()
+    tool = sbin / "fakerfkill"
+    tool.write_text("#!/bin/sh\necho \"$@\"\n")
+    tool.chmod(0o755)
+    monkeypatch.setattr(runner, "SBIN_DIRS", str(sbin))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    assert runner.find("fakerfkill") == str(tool)
+    assert runner.system_runner(["fakerfkill", "block", "bluetooth"]) == (0, "block bluetooth")
+    assert runner.system_runner(["no-such-tool-xyz"])[0] == 127
+
+
+def test_runner_prefers_path_over_sbin(monkeypatch, tmp_path):
+    from powerdeck import runner
+    for d in ("bin", "sbin"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "faketool").write_text(f"#!/bin/sh\necho {d}\n")
+        (tmp_path / d / "faketool").chmod(0o755)
+    monkeypatch.setattr(runner, "SBIN_DIRS", str(tmp_path / "sbin"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    assert runner.system_runner(["faketool"]) == (0, "bin")
+
+
+def test_root_refuses_rfkill_from_another_directory():
+    """The sbin lookup is for bare names only: a revert command naming its own rfkill is refused."""
+    assert commands.allowed_as_root(["rfkill", "block", "bluetooth"])
+    for path in ("/tmp/x/rfkill", "./rfkill", "/usr/sbin/rfkill"):
+        assert not commands.allowed_as_root([path, "block", "bluetooth"])

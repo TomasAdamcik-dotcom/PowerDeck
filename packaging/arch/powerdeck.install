@@ -1,0 +1,20 @@
+# pacman install hooks (run as root)
+post_install() {
+    systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+post_upgrade() {
+    post_install
+}
+
+# on removal only: put every setting back while PowerDeck's files still exist
+pre_remove() {
+    /usr/libexec/powerdeck-uninstall-reset || true
+    # in any case, while its ExecStopPost (restores the CPU limits) still exists
+    systemctl stop 'powerdeck-thermal@*.service' >/dev/null 2>&1 || true
+}
+
+post_remove() {
+    rm -f /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
+    systemctl daemon-reload >/dev/null 2>&1 || true
+}
