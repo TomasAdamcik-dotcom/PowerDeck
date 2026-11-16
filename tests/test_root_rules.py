@@ -10,6 +10,21 @@ def test_helper_python_is_isolated():
     assert (ROOT / "powerdeck/helper.py").read_text().splitlines()[0] == "#!/usr/bin/python3 -I"
 
 
+def test_thermal_daemon_is_isolated_and_stdlib_only():
+    src = (ROOT / "powerdeck/thermal_limit.py").read_text()
+    assert src.splitlines()[0] == "#!/usr/bin/python3 -I"
+    imports = set(re.findall(r"^(?:from|import) (\S+)", src, re.M))
+    assert imports <= {"__future__", "glob", "json", "os", "signal", "sys", "time"}, imports
+
+
+def test_thermal_unit_runs_only_the_daemon_and_is_never_enabled():
+    unit = (ROOT / "data/powerdeck-thermal@.service").read_text()
+    execs = re.findall(r"^Exec\w*=(.*)$", unit, re.M)
+    assert execs == ["/usr/libexec/powerdeck-thermal %i", "/usr/libexec/powerdeck-thermal --restore"]
+    assert "[Install]" not in unit
+    assert re.search(r"^ProtectSystem=strict$", unit, re.M) and re.search(r"^ProtectHome=yes$", unit, re.M)
+
+
 def test_uninstall_reset_keeps_cwd_off_sys_path():
     script = (ROOT / "scripts/uninstall-reset.sh").read_text()
     assert re.search(r"^cd / \|\| exit 0$", script, re.M)

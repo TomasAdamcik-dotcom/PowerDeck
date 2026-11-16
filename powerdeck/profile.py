@@ -60,7 +60,8 @@ class Profile:
     tethering: dict = field(default_factory=dict)  # connection, priority
     display: dict = field(default_factory=dict)  # blank_after_minutes, lock_after_minutes, lock_screen, brightness_percent, night_light
     bluetooth: bool | None = None
-    cpu: dict = field(default_factory=dict)  # turbo (bool), max_freq_percent (10-100)
+    # turbo (bool), max_freq_percent (10-100), thermal_target_celsius (55-90, None = no regulation)
+    cpu: dict = field(default_factory=dict)
     # Keep GNOME desktop sharing (RDP) reachable: the guard dismisses the screensaver, which
     # GNOME activates when the lid closes and which inhibits all remote desktop sessions.
     remote_access: bool | None = None
@@ -118,6 +119,8 @@ class Profile:
             if k == "turbo" and isinstance(v, bool):
                 continue
             if k == "max_freq_percent" and _is_int(v) and 10 <= v <= 100:
+                continue
+            if k == "thermal_target_celsius" and (v is None or (_is_int(v) and 55 <= v <= 90)):
                 continue
             raise ProfileError(f"Invalid cpu setting: {k}={v!r}")
         if self.bluetooth is not None and not isinstance(self.bluetooth, bool):

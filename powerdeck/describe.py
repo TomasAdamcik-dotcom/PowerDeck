@@ -127,6 +127,14 @@ def _cpu(p: Profile) -> list[Item]:
         items.append(Item(text, [cmd.cpu_max_percent(m)],
                           _("Writes scaling_max_freq for every core in /sys/devices/system/cpu. "
                             "Resets after reboot. Needs admin rights.")))
+    if "thermal_target_celsius" in p.cpu:
+        t = p.cpu["thermal_target_celsius"]
+        text = (_("No CPU temperature regulation") if t is None
+                else _("CPU held at {} °C: its power limit is lowered only as much as needed").format(t))
+        items.append(Item(text, [cmd.thermal_target(t)],
+                          _("Runs the root service powerdeck-thermal, which every 2 s adjusts the RAPL "
+                            "power limit (or scaling_max_freq) in /sys and restores it when stopped. "
+                            "Resets after reboot. Needs admin rights.")))
     return items
 
 

@@ -36,6 +36,8 @@ cmd_deb() {
         || dpkg -i ./dist/powerdeck_*.deb
         set -x
         test \"\$(stat -c %U:%a /usr/libexec/powerdeck-helper)\" = root:755
+        test \"\$(stat -c %U:%a /usr/libexec/powerdeck-thermal)\" = root:755
+        test -f /usr/lib/systemd/system/powerdeck-thermal@.service
         python3 -c \"import xml.etree.ElementTree as E; p=[a.text for a in E.parse('/usr/share/polkit-1/actions/io.github.powerdeck.policy').iter('annotate') if a.get('key')=='org.freedesktop.policykit.exec.path']; assert '/usr/libexec/powerdeck-helper' in p, p\"
         su dev -c 'cd / && powerdeck list >/dev/null && powerdeck plan Default >/dev/null'
         /usr/libexec/powerdeck-helper set-lid ignore ignore ignore
@@ -44,6 +46,7 @@ cmd_deb() {
         apt-get remove -y -qq powerdeck >/dev/null 2>&1
         test ! -e /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
         test ! -e /usr/libexec/powerdeck-helper
+        test ! -e /usr/libexec/powerdeck-thermal
         set +x
         echo 'deb: OK'"
 }

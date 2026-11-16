@@ -10,6 +10,7 @@ Najnovšie hore. Každé rozhodnutie: dátum · čo platí · prečo · kde v k�
 
 | Dátum | Rozhodnutie | Prečo | Kde |
 |---|---|---|---|
+| 2026-11-16 | **Rucksack reguluje teplotu** namiesto pevného limitu: turbo on, max 100 %, `cpu.thermal_target_celsius: 65` (55–90, `null` = vypnuté). Root služba `powerdeck-thermal@<°C>.service` (spúšťa ju len helper: `set-thermal-target`, `clear-thermal-target`) každé 2 s znižuje/zvyšuje PL1+PL2 v RAPL, bez RAPL `scaling_max_freq`. Po zastavení, páde aj odinštalovaní vráti pôvodné limity; po reštarte nebeží. Default, Travel a Max Performance ju vypínajú. Guard 70/82 °C ostáva ako poistka. | Pevný limit bol buď príliš pomalý (50 % z 1,1 GHz ≈ 550 MHz), alebo príliš horúci. | `thermal_limit.py`, `helper.py`, `data/powerdeck-thermal@.service`, `backends.plan_cpu`, `builtin.py`, docs/thermal-regulation.md |
 | 2026-11-16 | **RDP so zavretým vekom = zdieľanie plochy + guard.** ~~Remote Login ako robustná cesta~~ sa nahrádza: na T14s (Ubuntu 26.04) končí čiernou obrazovkou, lebo handover na GDM štartuje dlhšie, než je 30 s timeout. Zdieľanie plochy overené: pripojenie pri zatvorenom veku drží a bežiace spojenie raz spadne, opätovné pripojenie funguje. Stav Remote Login sa číta cez `systemctl is-enabled` (nie `grdctl --system`, ktorý pýta heslo). | Test na notebooku 2026-11-16. | `guard.remote_access_notes`, `status.read_remote_login`, README |
 | 2026-11-15 | Testovacie VM: QEMU/KVM, Ubuntu 26.04 + GNOME 50, simulované veko cez uinput `SW_LID`, bez admin hesla na hoste. Overené v ňom: pkexec, drop-in veka, guard služba a `apt remove`. Cesta veko → šetrič → RDP sa dá overiť len na notebooku. | Systemd, logind a polkit kontajner neotestuje a notebook nechceme pri každej zmene meniť. | `scripts/dev-vm.sh`, `scripts/vm/fakelid.py` |
 | 2026-11-14 | **Root nikdy nekoná podľa ničoho, čo môže zapísať používateľ, bez whitelistu.** Odinštalovanie číta zálohy z `$HOME`, ale ako root spustí len príkazy presne v tvare `commands.allowed_as_root`; ostatné odmietne. Symlinky do adresára záloh od ne-roota sa odmietajú. Python ako root sa nespúšťa s cwd v `sys.path` (`-I`, `-P` + `cd /`). | Code review našlo, že root spúšťal príkazy zo záloh, ktoré môže prepísať ktorýkoľvek proces používateľa. | `helper.valid_args`, `commands.allowed_as_root`, `engine._symlinked_dir`, `scripts/uninstall-reset.sh`, `tests/test_reset_security.py`, `CLAUDE.md` |
@@ -29,7 +30,7 @@ Najnovšie hore. Každé rozhodnutie: dátum · čo platí · prečo · kde v k�
 | 2026-11-12 | Úlohy profilu (`tasks`) sú **iba** `systemctl --user start\|stop\|restart UNIT`, validované pri načítaní. | Profil = kód. Žiadne ľubovoľné príkazy (pôvodný návrh v sekcii 6 ich mal). | `profile.py` |
 | 2026-11-12 | GTK4 + libadwaita appka + CLI. GNOME Shell extension len voliteľne po v1. Flatpak nie (sandbox bráni `nmcli` a `pkexec`). | Otvorená otázka 5. | — |
 
-**Čaká na rozhodnutie vlastníka:** limit 50 % v Rucksacku (s vypnutým turbom ≈ 550 MHz), redizajn GUI, licencia, maintainer v `.deb`. Celý zoznam je v sekcii 2 súboru `TODO.md`.
+**Čaká na rozhodnutie vlastníka:** redizajn GUI, licencia, maintainer v `.deb`. Celý zoznam je v sekcii 2 súboru `TODO.md`.
 
 ## 1. Zámer
 
@@ -174,7 +175,7 @@ sensors
 | **Default** | bezpečný denný režim, pôvodné hodnoty systému | suspend | zapnutý | default | balanced |
 | **RemoteWork** | cestovanie/práca mimo domova, SSH/RDP so zavretým vekom (bez zámku) | ignore | vypnutý | off (pre vybrané siete) | balanced |
 | **Travel** | (variant RemoteWork) zameraný na ruksak: turbo off, prísnejší thermal guard (80/88 °C) | ignore | vypnutý | off | power-saver |
-| **Rucksack** | notebook zavretý v taške: turbo off, max 50 %, BT off, 70/82 °C | ignore | vypnutý | off | power-saver |
+| **Rucksack** | notebook zavretý v taške: CPU regulované na 65 °C (turbo on, 100 %), BT off, 70/82 °C | ignore | vypnutý | off | power-saver |
 | **BatterySaver** | max. výdrž | suspend | zapnutý | on | power-saver, nižší jas, voliteľne vypnutý BT |
 | **Max Performance** | výkon, po skončení návrat na predošlý profil | suspend | zapnutý | default | performance |
 | **Presentation** | obrazovka nezhasína, bez uspania | – | vypnutý | default | balanced |

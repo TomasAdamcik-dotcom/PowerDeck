@@ -27,8 +27,8 @@ def test_every_builtin_profile_is_described():
 def test_rucksack_bullets_in_plain_language():
     texts = [i.text for i in describe(BY["Rucksack"]).items]
     assert "Closing the lid does nothing – the PC keeps running" in texts
-    assert any("turbo/boost off" in t for t in texts)
-    assert any("limited to 50 %" in t for t in texts)
+    assert any("turbo/boost on" in t for t in texts)
+    assert any("CPU held at 65 °C" in t for t in texts)
     assert any(t.startswith("Thermal guard: notification at 70") and "suspends the laptop" in t for t in texts)
 
 
@@ -104,6 +104,16 @@ def test_described_commands_are_exactly_what_plan_runs(profile, tmp_path, monkey
     make_cpu(tmp_path / "c", cur_max=3_080_000, no_turbo="0" if profile.cpu.get("turbo") is False else "1")
     monkeypatch.setattr(cpu, "CPU_ROOT", str(tmp_path / "c"))
     monkeypatch.setattr(helper, "DROPIN_DIR", str(tmp_path / "l"))
+    # temperature regulation available and running with a target other than the profile's
+    zone = tmp_path / "t" / "thermal_zone0"
+    zone.mkdir(parents=True)
+    (zone / "type").write_text("x86_pkg_temp"); (zone / "temp").write_text("50000")
+    (tmp_path / "s").mkdir()
+    other = 70 if profile.cpu.get("thermal_target_celsius") is None else None
+    if other:
+        (tmp_path / "s" / "state.json").write_text(f'{{"target": {other}, "limit": "9.0 W"}}')
+    monkeypatch.setattr(cpu, "THERMAL_ROOT", str(tmp_path / "t"))
+    monkeypatch.setattr(cpu, "THERMAL_STATE_DIR", str(tmp_path / "s"))
     helper.main(["set-lid", "poweroff", "poweroff", "poweroff"], str(tmp_path / "l"), reload=False)
     run = EverythingDiffers(profile)
     planned = [c.apply_argv for c in engine.make_plan(profile, run).changes]

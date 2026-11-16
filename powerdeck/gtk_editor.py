@@ -108,6 +108,8 @@ class ProfileEditor(Adw.Window):
             cpu["max_freq_percent"] = int(self.fmax_opts[fm].split()[0])
         elif self._fmax_custom is not None:
             cpu["max_freq_percent"] = self._fmax_custom
+        if "thermal_target_celsius" in old.cpu:  # no editor field yet: keep it
+            cpu["thermal_target_celsius"] = old.cpu["thermal_target_celsius"]
         d["cpu"] = cpu
         return Profile.from_dict(d)
 

@@ -5,7 +5,8 @@
 # 1. per user: revert every applied profile – system parts as root (NetworkManager, power mode,
 #    Bluetooth, brightness, lid, CPU), then gsettings/tasks as that user (their own dconf);
 # 2. stop and disable the guard service;
-# 3. safety net: remove the lid drop-in, turbo on and no CPU frequency cap (kernel defaults).
+# 3. safety net: remove the lid drop-in, stop the temperature regulation (it restores the CPU
+#    limits), turbo on and no CPU frequency cap (kernel defaults).
 PY=${POWERDECK_PYTHON:-/usr/bin/python3}
 # Python runs as root here: never import from the current directory (a planted powerdeck/ or
 # json.py would run as root). `-P` keeps the cwd off sys.path, `cd /` makes sure of it.
@@ -41,6 +42,7 @@ done
 
 if [ -x "$HELPER" ]; then
   "$HELPER" remove-lid || true
+  "$HELPER" clear-thermal-target >/dev/null 2>&1 || true
   "$HELPER" set-cpu-turbo on >/dev/null 2>&1 || true
   "$HELPER" set-cpu-max-percent 100 >/dev/null 2>&1 || true
 fi

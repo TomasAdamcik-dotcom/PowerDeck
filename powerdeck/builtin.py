@@ -10,7 +10,7 @@ BUILTIN_PROFILES = [
         wifi_powersave="default",
         power_mode="balanced",
         display={"lock_screen": True},
-        cpu={"turbo": True, "max_freq_percent": 100},
+        cpu={"turbo": True, "max_freq_percent": 100, "thermal_target_celsius": None},
         builtin=True,
     ),
     Profile(
@@ -38,19 +38,21 @@ BUILTIN_PROFILES = [
         remote_access=True,
         # Turbo off alone caps the clock at base frequency; a % limit on top would be relative
         # to that base clock (kernel lowers cpuinfo_max_freq) and starve the CPU. 100 also lifts
-        # a cap left behind by Rucksack.
-        cpu={"turbo": False, "max_freq_percent": 100},
+        # a cap left behind by Rucksack, None stops Rucksack's temperature regulation.
+        cpu={"turbo": False, "max_freq_percent": 100, "thermal_target_celsius": None},
         thermal_guard={"warn_celsius": 80, "critical_celsius": 88},
         builtin=True,
     ),
     Profile(
         name="Rucksack",
-        description="Laptop closed in a bag: strictest limits (no turbo, CPU max 50 %, power-saver, low thermal thresholds); screen lock off.",
+        description="Laptop closed in a bag: CPU held at 65 °C (as fast as that allows), power-saver, low thermal thresholds; screen lock off.",
         lid={"battery": "ignore", "ac": "ignore", "docked": "ignore"},
         automatic_suspend={"battery": False, "ac": False},
         wifi_powersave="off",
         power_mode="power-saver",
-        cpu={"turbo": False, "max_freq_percent": 50},
+        # A fixed cap was either too slow or too hot; the root daemon lowers the CPU power limit
+        # (or max frequency) just enough to stay at 65 °C. The guard (70/82) stays as safety net.
+        cpu={"turbo": True, "max_freq_percent": 100, "thermal_target_celsius": 65},
         bluetooth=False,
         display={"blank_after_minutes": 0, "night_light": False, "lock_screen": False},
         remote_access=True,
@@ -84,7 +86,7 @@ BUILTIN_PROFILES = [
         wifi_powersave="default",
         power_mode="performance",
         display={"lock_screen": True},
-        cpu={"turbo": True, "max_freq_percent": 100},
+        cpu={"turbo": True, "max_freq_percent": 100, "thermal_target_celsius": None},
         builtin=True,
     ),
 ]
