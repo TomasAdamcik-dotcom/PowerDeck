@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, replace
 
-from . import commands, engine
+from . import commands, engine, history
 from .profile import Profile, load_profiles
 from .runner import Runner, system_runner
 from .i18n import _
@@ -254,6 +254,7 @@ def watch_screensaver(run: Runner = system_runner) -> None:  # pragma: no cover
 
 def loop(interval: int = 30, run: Runner = system_runner) -> None:  # pragma: no cover
     threading.Thread(target=watch_screensaver, args=(run,), daemon=True).start()
+    history.start_recording()  # temperature/frequency graph in the GUI, every 20 s
     st = GuardState()
     while True:
         st = run_once(st, run)

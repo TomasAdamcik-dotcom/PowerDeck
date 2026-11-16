@@ -152,6 +152,16 @@ SK = {
     "ok": "v poriadku",
     "warn": "varovanie",
     "critical": "kritické",
+    "Temperature and frequency history": "História teploty a frekvencie",
+    "Recorded every 20 s by the PowerDeck guard; kept for 7 days.": "Strážca PowerDecku zapisuje každých 20 s, uchováva sa 7 dní.",
+    "1 hour": "1 hodina",
+    "6 hours": "6 hodín",
+    "24 hours": "24 hodín",
+    "7 days": "7 dní",
+    "CPU temperature (°C)": "Teplota CPU (°C)",
+    "CPU frequency (GHz)": "Frekvencia CPU (GHz)",
+    "No data yet: the PowerDeck guard records every 20 s.": "Zatiaľ žiadne údaje: strážca PowerDecku zapisuje každých 20 s.",
+    "Profile": "Profil",
 }
 
 
