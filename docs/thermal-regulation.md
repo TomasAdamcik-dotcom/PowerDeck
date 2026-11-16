@@ -1,6 +1,6 @@
 # Temperature-regulated CPU limit (Rucksack)
 
-Status: implemented on branch `thermal-regulation` (TODO 2c). Hardware test on the T14s pending.
+Status: implemented in v0.4, verified on the T14s Gen 4 at the desk and in a bag on battery (2026-11-16).
 
 ## Why
 

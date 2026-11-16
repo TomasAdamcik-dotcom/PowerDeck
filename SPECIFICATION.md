@@ -2,7 +2,7 @@
 
 > Zlúčenie dokumentov **RemoteStation** (pôvodný návod + nápad) a **PowerDeck** (výrobná špecifikácia).
 > Pracovný názov: RemoteStation · Výrobný názov: **PowerDeck** · Platforma: Ubuntu 26.04 / GNOME
-> Stav: **v0.3, implementované** (pôvodne koncept). Sekcie 1–12 sú pôvodný návrh. Kde sa s ním niečo rozchádza, platí **zoznam rozhodnutí v sekcii 0**. Otvorené úlohy sú v `TODO.md`, pravidlá pre agentov v `CLAUDE.md`.
+> Stav: **v0.4, implementované a používané na T14s** (pôvodne koncept). Sekcie 1–12 sú pôvodný návrh. Kde sa s ním niečo rozchádza, platí **zoznam rozhodnutí v sekcii 0**. Otvorené úlohy sú v `TODO.md`, pravidlá pre agentov v `CLAUDE.md`.
 
 ## 0. Zoznam rozhodnutí (decision log)
 

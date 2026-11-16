@@ -1,6 +1,6 @@
 [project]
 name = "powerdeck"
-version = "0.3.0"
+version = "0.4.0"
 description = "PowerDeck — Linux workstation profiles"
 requires-python = ">=3.11"
 
