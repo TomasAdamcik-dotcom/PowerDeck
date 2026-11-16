@@ -34,8 +34,8 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-4.0, gir1.2-adw-1, pkexec | policykit-1, network-manager
-Recommends: power-profiles-daemon, libnotify-bin, brightnessctl, dbus-bin
+Depends: python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-4.0, gir1.2-adw-1, libglib2.0-bin, dbus-daemon, pkexec | policykit-1, network-manager
+Recommends: power-profiles-daemon, libnotify-bin, brightnessctl, dbus-bin, rfkill
 Maintainer: Tomas Adamcik <82325837+TomasAdamcik-dotcom@users.noreply.github.com>
 Homepage: https://github.com/TomasAdamcik-dotcom/PowerDeck
 Description: Linux workstation profiles

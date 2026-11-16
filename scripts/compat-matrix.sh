@@ -1,7 +1,7 @@
 #!/bin/sh
 # Compatibility check on other distributions in rootless podman containers (no VM, no admin
 # password): tests, CLI plan, a real apply/restore of the desktop settings, headless GUI, install
-# (.deb or scripts/install.sh), `powerdeck doctor` and a clean removal.
+# (.deb, .rpm or Arch package, and scripts/install.sh), `powerdeck doctor` and a clean removal.
 # Results: dist/compat/<distro>.log and .png.  A distribution passes when no line is FAIL.
 #   scripts/compat-matrix.sh [debian fedora mint manjaro zorin]
 # Zorin OS has no container image: "zorin" is its base, Ubuntu 24.04 (Zorin OS 18), with the
@@ -26,8 +26,8 @@ setup() { case $1 in
     # GNOME settings daemon schemas: GNOME desktops ship them; Mint's Cinnamon does not (see below)
     debian|zorin) echo "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $DEB_PKGS gnome-settings-daemon-common gnome-remote-desktop" ;;
     mint) echo "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $DEB_PKGS cinnamon-settings-daemon xrdp" ;;
-    fedora) echo "dnf -y -q install python3 python3-pytest python3-gobject gtk4 libadwaita xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 glib2 dconf gsettings-desktop-schemas gnome-settings-daemon gnome-remote-desktop NetworkManager polkit util-linux iproute libnotify brightnessctl tuned-ppd systemd shadow-utils findutils which" ;;
-    manjaro) echo "pacman -Syu --noconfirm -q python python-pytest python-gobject python-cairo gtk4 libadwaita xorg-server-xvfb xorg-xauth dbus glib2 dconf gsettings-desktop-schemas gnome-settings-daemon gnome-remote-desktop networkmanager polkit util-linux iproute2 libnotify brightnessctl power-profiles-daemon findutils >/dev/null" ;;
+    fedora) echo "dnf -y -q install python3 python3-pytest python3-gobject gtk4 libadwaita xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 glib2 dconf gsettings-desktop-schemas gnome-settings-daemon gnome-remote-desktop NetworkManager polkit util-linux iproute libnotify brightnessctl tuned-ppd systemd shadow-utils findutils which rpm-build python3-devel" ;;
+    manjaro) echo "pacman -Syu --noconfirm -q python python-pytest python-gobject python-cairo gtk4 libadwaita xorg-server-xvfb xorg-xauth dbus glib2 dconf gsettings-desktop-schemas gnome-settings-daemon gnome-remote-desktop networkmanager polkit util-linux iproute2 libnotify brightnessctl power-profiles-daemon findutils base-devel >/dev/null" ;;
 esac; }
 for d in ${*:-debian fedora mint manjaro zorin}; do
     echo "== $d"

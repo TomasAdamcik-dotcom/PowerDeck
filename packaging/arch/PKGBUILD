@@ -1,0 +1,29 @@
+# Arch Linux / Manjaro package. Build: scripts/build-arch.sh (in a Manjaro container if makepkg is
+# missing), or from the release tarball: makepkg -si
+# Maintainer: Tomas Adamcik <82325837+TomasAdamcik-dotcom@users.noreply.github.com>
+pkgname=powerdeck
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Laptop profiles for GNOME and Cinnamon"
+arch=(any)
+url="https://github.com/TomasAdamcik-dotcom/PowerDeck"
+license=(GPL-3.0-or-later)
+depends=(python python-gobject python-cairo gtk4 libadwaita networkmanager polkit systemd dbus)
+optdepends=('power-profiles-daemon: power mode'
+            'tuned-ppd: power mode'
+            'libnotify: notifications'
+            'brightnessctl: display brightness')
+backup=(etc/xdg/autostart/io.github.powerdeck.PowerDeck.desktop)
+install=powerdeck.install
+source=("PowerDeck-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')  # set to the release tarball's sum when publishing
+
+package() {
+    cd "PowerDeck-$pkgver"
+    local site
+    site=$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
+    sh scripts/stage.sh "$pkgdir" "$site"
+    # bytecode at build time, so root (uninstall) never writes it into the package directory
+    python -m compileall -q -s "$pkgdir" -p / "$pkgdir$site/powerdeck"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

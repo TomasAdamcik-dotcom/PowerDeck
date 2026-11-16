@@ -12,6 +12,8 @@ PY=${POWERDECK_PYTHON:-/usr/bin/python3}
 # json.py would run as root). `-P` keeps the cwd off sys.path, `cd /` makes sure of it.
 # (PYTHONPATH from the caller is kept, also for runuser, so a source checkout works too)
 cd / || exit 0
+# no bytecode written as root into the package directory (it would stay after removal)
+export PYTHONDONTWRITEBYTECODE=1
 HELPER=${POWERDECK_HELPER:-/usr/libexec/powerdeck-helper}
 PASSWD=${POWERDECK_PASSWD:-/etc/passwd}
 

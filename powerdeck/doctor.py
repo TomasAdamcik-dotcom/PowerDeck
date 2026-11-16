@@ -5,11 +5,10 @@ OK = works, WARN = a feature is missing (PowerDeck skips it), FAIL = PowerDeck c
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 
 from . import backends, commands, desktop
-from .runner import Runner, system_runner
+from .runner import Runner, find, system_runner
 
 OK, WARN, FAIL, INFO = "OK", "WARN", "FAIL", "INFO"
 MIN_PYTHON = (3, 11)
@@ -49,7 +48,7 @@ def check_toolkit() -> list[tuple[str, str]]:
     return out
 
 
-def check_system(run: Runner = system_runner, which=shutil.which,
+def check_system(run: Runner = system_runner, which=find,
                  service_dirs=PP_SERVICE_DIRS) -> list[tuple[str, str]]:
     desk = desktop.current()
     out = [(INFO, f"desktop: {desk} ({os.environ.get('XDG_CURRENT_DESKTOP') or 'no session'})")]
