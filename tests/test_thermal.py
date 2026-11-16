@@ -125,17 +125,29 @@ def test_floor_is_5_watts(sysfs):
     assert set(tl.apply_level(knobs, tl.LEVEL_MIN)) == {5_500_000, tl.RAPL_FLOOR_UW}
 
 
-def test_firmware_change_becomes_the_new_original(sysfs):
+def test_firmware_raise_becomes_the_new_original(sysfs):
     pc, _th, st, _cr = sysfs
     _kind, knobs = tl.discover(str(pc))
     tl.apply_level(knobs, 0.5)
     pl1 = pc / "intel-rapl:0/constraint_0_power_limit_uw"
     assert int(pl1.read_text()) == 27_500_000
-    pl1.write_text(f"{40 * W}\n")  # e.g. power profile switch or resume
+    pl1.write_text(f"{60 * W}\n")  # e.g. power profile switch to performance
     tl.apply_level(knobs, 0.5)
-    assert int(pl1.read_text()) == 20 * W
+    assert int(pl1.read_text()) == 30 * W
     tl.restore(knobs, str(st))
-    assert int(pl1.read_text()) == 40 * W
+    assert int(pl1.read_text()) == 60 * W
+
+
+def test_firmware_lowering_is_respected_but_not_restored(sysfs):
+    pc, _th, st, _cr = sysfs
+    _kind, knobs = tl.discover(str(pc))
+    tl.apply_level(knobs, 0.5)
+    pl1 = pc / "intel-rapl:0/constraint_0_power_limit_uw"
+    pl1.write_text(f"{3 * W}\n")  # temporary firmware cap, even below our floor
+    tl.apply_level(knobs, 1.0)
+    assert int(pl1.read_text()) == 3 * W  # never raised above what firmware wants
+    tl.restore(knobs, str(st))
+    assert int(pl1.read_text()) == 55 * W  # the temporary cap does not become permanent
 
 
 def test_frequency_fallback_keeps_an_uncapped_cpu_uncapped(tmp_path):
@@ -173,13 +185,40 @@ def test_restore_from_state_after_a_crash_only_touches_known_paths(sysfs, tmp_pa
     assert tl.restore_from_state(str(st), str(pc), str(cr)) == 0  # nothing left: no-op
 
 
+def test_restore_after_a_kill_at_the_floor(sysfs):
+    """Limits at exactly 5 W are not discovered for regulation, but must still be restored."""
+    pc, th, st, cr = sysfs
+    make_cpu(cr)
+    make_zone(th, 99)
+    _kind, knobs = tl.discover(str(pc))
+    tl.write_state(str(st), {"target": 55, "originals": {k.path: k.original for k in knobs}})
+    tl.apply_level(knobs, tl.LEVEL_MIN)
+    for p in pc.glob("intel-rapl*/constraint_[01]_power_limit_uw"):
+        p.write_text(f"{tl.RAPL_FLOOR_UW}\n")  # all at the floor: discover() would fall back to cpufreq
+    assert tl.discover(str(pc), str(cr))[0] == "frequency"
+    assert tl.restore_from_state(str(st), str(pc), str(cr)) == 0
+    assert limits(pc)["intel-rapl:0/constraint_0"] == 55 * W
+    assert limits(pc)["intel-rapl-mmio:0/constraint_0"] == 30 * W
+    assert (cr / "cpu0/cpufreq/scaling_max_freq").read_text() == "4000000"  # cpufreq untouched
+
+
+def test_state_is_written_before_the_first_limit(sysfs, monkeypatch):
+    pc, th, st, _cr = sysfs
+    make_zone(th, 95)
+    seen = []
+    real_write = tl._write
+    monkeypatch.setattr(tl, "_write", lambda path, v: seen.append((st / "state.json").exists()) or real_write(path, v))
+    run(sysfs, 55, ticks=1)
+    assert seen and seen[0] is True
+
+
 def test_no_rapl_and_no_cpufreq_exits_3(tmp_path):
     make_zone(tmp_path / "th", 50)
     assert tl.run(65, str(tmp_path), str(tmp_path / "a"), str(tmp_path / "b"), str(tmp_path / "th"),
                   ticks=1, sleep=lambda s: None) == 3
 
 
-@pytest.mark.parametrize("argv", [[], ["54"], ["91"], ["65", "70"], ["-1"], ["６５"], ["65.5"], ["../x"]])
+@pytest.mark.parametrize("argv", [[], ["54"], ["91"], ["65", "70"], ["-1"], ["６５"], ["65.5"], ["../x"], ["065"]])
 def test_daemon_refuses_bad_arguments(argv):
     assert tl.main(argv) == 2
 
@@ -188,12 +227,13 @@ def test_daemon_refuses_bad_arguments(argv):
 @pytest.mark.parametrize("argv,ok", [
     (["set-thermal-target", "55"], True), (["set-thermal-target", "90"], True),
     (["clear-thermal-target"], True), (["set-thermal-target", "91"], False),
-    (["set-thermal-target", "x"], False), (["clear-thermal-target", "1"], False)])
+    (["set-thermal-target", "x"], False), (["clear-thermal-target", "1"], False),
+    (["set-thermal-target", "065"], False)])
 def test_helper_allowlist(argv, ok):
     assert helper.valid_args(argv) is ok
 
 
-def test_helper_starts_exactly_one_instance(monkeypatch):
+def test_helper_starts_exactly_one_instance(monkeypatch, tmp_path):
     calls = []
 
     class R:
@@ -205,12 +245,13 @@ def test_helper_starts_exactly_one_instance(monkeypatch):
         return R(0)
 
     monkeypatch.setattr(helper.subprocess, "run", fake_run)
-    assert helper.main(["set-thermal-target", "65"]) == 0
+    lock = str(tmp_path / "lock")
+    assert helper.main(["set-thermal-target", "65"], thermal_lock=lock) == 0
     assert calls == [[helper.THERMAL_DAEMON, "--check"],
                      ["systemctl", "stop", "powerdeck-thermal@*.service"],
                      ["systemctl", "start", "powerdeck-thermal@65.service"]]
     calls.clear()
-    assert helper.main(["clear-thermal-target"]) == 0
+    assert helper.main(["clear-thermal-target"], thermal_lock=lock) == 0
     assert calls == [["systemctl", "stop", "powerdeck-thermal@*.service"]]
 
 
@@ -284,3 +325,31 @@ def test_capture_and_monitor_show_the_regulation(available):
 def helper_path():
     from powerdeck import commands
     return commands.HELPER_PATH
+
+
+def test_helper_waits_for_a_running_switch(monkeypatch, tmp_path):
+    """stop+start of two parallel calls must not interleave (two daemons on the same limits)."""
+    import fcntl
+    import os
+    import threading
+    lock = str(tmp_path / "lock")
+    calls = []
+    monkeypatch.setattr(helper.subprocess, "run",
+                        lambda argv, check=False: calls.append(argv) or type("R", (), {"returncode": 0})())
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT)
+    fcntl.flock(fd, fcntl.LOCK_EX)  # another helper is switching right now
+    t = threading.Thread(target=helper.main, args=(["set-thermal-target", "70"],), kwargs={"thermal_lock": lock})
+    t.start()
+    t.join(0.3)
+    assert t.is_alive() and not any(a[0] == "systemctl" for a in calls)
+    os.close(fd)
+    t.join(2)
+    assert calls[-1] == ["systemctl", "start", "powerdeck-thermal@70.service"]
+
+
+def test_helper_refuses_a_planted_lock_symlink(monkeypatch, tmp_path):
+    (tmp_path / "lock").symlink_to(tmp_path / "target")
+    monkeypatch.setattr(helper.subprocess, "run", lambda argv, check=False: type("R", (), {"returncode": 0})())
+    with pytest.raises(OSError):
+        helper.main(["clear-thermal-target"], thermal_lock=str(tmp_path / "lock"))
+    assert not (tmp_path / "target").exists()

@@ -54,6 +54,8 @@ cat > "$OUT/DEBIAN/prerm" <<'PRERM'
 set -e
 if [ "$1" = "remove" ]; then
   /usr/libexec/powerdeck-uninstall-reset || true
+  # in any case, while its ExecStopPost (restores the CPU limits) still exists
+  systemctl stop 'powerdeck-thermal@*.service' 2>/dev/null || true
 fi
 PRERM
 chmod 0755 "$OUT/DEBIAN/prerm"

@@ -32,8 +32,14 @@ Controller (level `f`, original limit × `f`):
 - temperature below target − 3 °C: `f += 0.02` (slow, about 1 W / 100 MHz per 2 s)
 - otherwise: hold.
 
-Each tick it also checks the value it wrote last; if firmware (power profile change, resume)
-changed it, the new value becomes the original and the cap is written again.
+Each tick it also checks the value it wrote last. If firmware (power profile change, resume)
+raised it, the new value becomes the original. If firmware lowered it (lap mode, power profile),
+the regulator never goes above that value, but it is not what gets restored on stop.
+
+The state file is written before the first limit changes, so `--restore` (ExecStopPost) can undo
+a killed daemon at any point, also for limits left exactly at the 5 W floor. The helper holds
+`/run/powerdeck-thermal.lock` (flock) around stop + start, so two parallel calls never leave two
+instances fighting over the same limits. Targets are canonical (`65`, not `065`).
 
 The daemon writes `/run/powerdeck-thermal/state.json` (0644: target, level, limit, original
 values). The app reads it to show the regulation in `status` / `monitor` and to know what to

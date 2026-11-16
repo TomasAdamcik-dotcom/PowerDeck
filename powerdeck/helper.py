@@ -86,17 +86,37 @@ def _systemctl(*args: str) -> int:
     return subprocess.run(["systemctl", *args], check=False).returncode
 
 
-def set_thermal_target(celsius: int) -> int:
+THERMAL_LOCK = "/run/powerdeck-thermal.lock"
+
+
+def _thermal_lock(path: str):
+    """Serialise stop+start: two parallel calls must never leave two instances fighting over
+    the same limits (each would take the other's lowered value for the original)."""
+    import fcntl
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
+def set_thermal_target(celsius: int, lock: str = THERMAL_LOCK) -> int:
     """Run powerdeck-thermal@<celsius>.service, and no other instance."""
     if subprocess.run([THERMAL_DAEMON, "--check"], check=False).returncode != 0:
         print("CPU temperature regulation not available on this machine", file=sys.stderr)
         return 3
-    _systemctl("stop", THERMAL_UNITS)  # its ExecStopPost restores the limits first
-    return _systemctl("start", f"powerdeck-thermal@{celsius}.service")
+    fd = _thermal_lock(lock)
+    try:
+        _systemctl("stop", THERMAL_UNITS)  # its ExecStopPost restores the limits first
+        return _systemctl("start", f"powerdeck-thermal@{celsius}.service")
+    finally:
+        os.close(fd)
 
 
-def clear_thermal_target() -> int:
-    return _systemctl("stop", THERMAL_UNITS)
+def clear_thermal_target(lock: str = THERMAL_LOCK) -> int:
+    fd = _thermal_lock(lock)
+    try:
+        return _systemctl("stop", THERMAL_UNITS)
+    finally:
+        os.close(fd)
 
 
 USAGE = ("usage: set-lid B AC D | remove-lid | set-cpu-turbo on|off | set-cpu-max-percent 10-100 | "
@@ -116,7 +136,8 @@ def valid_args(argv: list[str]) -> bool:
     if len(argv) == 2 and argv[0] == "set-cpu-max-percent":
         return argv[1].isascii() and argv[1].isdigit() and 10 <= int(argv[1]) <= 100
     if len(argv) == 2 and argv[0] == "set-thermal-target":
-        return argv[1].isascii() and argv[1].isdigit() and MIN_TARGET <= int(argv[1]) <= MAX_TARGET
+        return (argv[1].isascii() and argv[1].isdigit() and not argv[1].startswith("0")
+                and MIN_TARGET <= int(argv[1]) <= MAX_TARGET)
     if len(argv) == 1:
         return argv[0] in ("remove-lid", "clear-thermal-target")
     if len(argv) == 4 and argv[0] == "set-lid":
@@ -125,7 +146,7 @@ def valid_args(argv: list[str]) -> bool:
 
 
 def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True,
-         cpu_root: str = CPU_ROOT) -> int:
+         cpu_root: str = CPU_ROOT, thermal_lock: str = THERMAL_LOCK) -> int:
     if not valid_args(argv):
         print(USAGE, file=sys.stderr)
         return 2
@@ -134,9 +155,9 @@ def main(argv: list[str], dropin_dir: str = DROPIN_DIR, reload: bool = True,
     if argv[0] == "set-cpu-max-percent":
         return set_max_percent(int(argv[1]), cpu_root)
     if argv[0] == "set-thermal-target":
-        return set_thermal_target(int(argv[1]))
+        return set_thermal_target(int(argv[1]), thermal_lock)
     if argv[0] == "clear-thermal-target":
-        return clear_thermal_target()
+        return clear_thermal_target(thermal_lock)
     if argv[0] == "remove-lid":
         try:
             os.remove(os.path.join(dropin_dir, DROPIN))

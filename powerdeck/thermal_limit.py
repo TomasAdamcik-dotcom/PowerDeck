@@ -34,7 +34,9 @@ LEVEL_MIN, LEVEL_STEP, HYSTERESIS_C = 0.1, 0.02, 3
 
 
 def valid_target(s) -> bool:
-    return isinstance(s, str) and s.isascii() and s.isdigit() and MIN_TARGET <= int(s) <= MAX_TARGET
+    """Canonical decimal 55-90 (no leading zero, so one target = one unit name)."""
+    return (isinstance(s, str) and s.isascii() and s.isdigit() and not s.startswith("0")
+            and MIN_TARGET <= int(s) <= MAX_TARGET)
 
 
 def _read(path: str) -> str | None:
@@ -70,6 +72,7 @@ class Knob:
     def __init__(self, path: str, original: int | None, floor: int, hw_max: str | None = None):
         self.path, self.original, self.floor, self.hw_max = path, original, floor, hw_max
         self.written: int | None = None
+        self.firmware_cap: int | None = None  # a lower limit firmware set while we regulate
 
     def ceiling(self) -> int | None:
         hw = _int(self.hw_max) if self.hw_max else None
@@ -82,7 +85,9 @@ class Knob:
 
 
 
-def rapl_knobs(powercap: str = POWERCAP, need_write: bool = True) -> list[Knob]:
+def rapl_knobs(powercap: str = POWERCAP, need_write: bool = True, any_value: bool = False) -> list[Knob]:
+    """Package PL1/PL2. ``any_value`` (for --restore) also returns limits at or below the floor,
+    which is exactly where a killed daemon may have left them."""
     knobs = []
     for dom in RAPL_DOMAINS:
         d = f"{powercap}/{dom}"
@@ -93,7 +98,7 @@ def rapl_knobs(powercap: str = POWERCAP, need_write: bool = True) -> list[Knob]:
                 continue
             path = f"{d}/constraint_{i}_power_limit_uw"
             v = _int(path)
-            if v is not None and v > RAPL_FLOOR_UW and (not need_write or os.access(path, os.W_OK)):
+            if v is not None and (any_value or v > RAPL_FLOOR_UW) and (not need_write or os.access(path, os.W_OK)):
                 knobs.append(Knob(path, v, RAPL_FLOOR_UW))
     return knobs
 
@@ -147,13 +152,19 @@ def apply_level(knobs: list[Knob], level: float) -> list[int]:
     for k in knobs:
         cur = _int(k.path)
         if k.written is not None and cur is not None and cur != k.written:
-            # firmware (power profile switch, resume) changed the limit: that is the new original
-            print(f"{k.path}: changed to {cur} by someone else, adopting it", file=sys.stderr)
-            k.original = cur if k.hw_max is None or cur < (_int(k.hw_max) or 0) else None
+            print(f"{k.path}: changed to {cur} by someone else", file=sys.stderr)
+            if k.hw_max is not None:  # frequency: turbo toggled or another cap set
+                k.original = cur if cur < (_int(k.hw_max) or 0) else None
+            elif cur > (k.original or 0):  # power: firmware raised it, that is the new original
+                k.original, k.firmware_cap = cur, None
+            else:  # power: firmware lowered it (lap mode, power profile): respect it, but never
+                k.firmware_cap = cur  # make it the value restored when we stop
         ceiling = k.ceiling()
         if ceiling is None:
             continue
         want = max(k.floor, int(ceiling * level)) if level < 1 else ceiling
+        if k.firmware_cap is not None:
+            want = min(want, k.firmware_cap)  # also below our own floor
         if level >= 1 and k.original is None:
             want = UNLIMITED_KHZ  # no cap; the kernel clamps it to the hardware maximum
             if cur is not None and cur >= ceiling:
@@ -205,12 +216,14 @@ def restore_from_state(state_dir: str = STATE_DIR, powercap: str = POWERCAP,
             originals = json.load(f).get("originals", {})
     except (OSError, ValueError, AttributeError):
         return 0
-    _kind, knobs = discover(powercap, cpu_root)
+    # every path the daemon could have used, whatever their values are now
+    knobs = rapl_knobs(powercap, need_write=False, any_value=True) + freq_knobs(cpu_root, need_write=False)
     known = {k.path: k for k in knobs}
     for path, v in originals.items() if isinstance(originals, dict) else ():
         if path in known and (v is None or (isinstance(v, int) and not isinstance(v, bool) and 0 < v < 10**9)):
             known[path].original = v
-    return restore(list(known.values()), state_dir)
+    return restore([known[p] for p in originals if p in known] if isinstance(originals, dict) else [],
+                   state_dir)
 
 
 def run(target: int, state_dir: str = STATE_DIR, powercap: str = POWERCAP, cpu_root: str = CPU_ROOT,
@@ -222,6 +235,9 @@ def run(target: int, state_dir: str = STATE_DIR, powercap: str = POWERCAP, cpu_r
     print(f"regulating CPU to {target} °C via {kind} limits ({len(knobs)} knobs)", file=sys.stderr)
     originals = {k.path: k.original for k in knobs}  # as found at start, for --restore after a crash
     level, n = 1.0, 0
+    # before the first write, so a daemon killed at any point can be undone by --restore
+    write_state(state_dir, {"target": target, "kind": kind, "level": level, "temp_c": None,
+                            "limit": "", "originals": originals})
     try:
         while ticks is None or n < ticks:
             temp = read_temp(thermal)
