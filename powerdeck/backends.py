@@ -237,7 +237,7 @@ def read_backlight(run: Runner) -> Backlight | None:
     rc, o = run(["brightnessctl", "-m"])
     parts = o.strip().split(",") if rc == 0 else []
     if len(parts) >= 5 and parts[1] == "backlight" and parts[2].isdigit() and parts[4].isdigit() \
-            and int(parts[4]) > 0 and re.fullmatch(r"[A-Za-z0-9_.:-]+", parts[0]):
+            and int(parts[4]) > 0 and re.fullmatch(r"[A-Za-z0-9_.:][A-Za-z0-9_.:-]*", parts[0]):
         return Backlight(parts[0], int(parts[2]), int(parts[4]))
     return None
 

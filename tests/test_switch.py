@@ -167,7 +167,7 @@ def test_keep_brightness_without_backlight_does_nothing():
 def test_backlight_parsing_refuses_odd_device_names():
     assert backends.read_backlight(lambda a: (0, "intel_backlight,backlight,3073,16%,19393\n")) \
         == backends.Backlight("intel_backlight", 3073, 19393)
-    for out in ("x;id,backlight,1,1%,10", "x,leds,1,1%,10", "x,backlight,1,1%,0", "x,backlight,a,1%,10", ""):
+    for out in ("x;id,backlight,1,1%,10", "-x,backlight,1,1%,10", "x,leds,1,1%,10", "x,backlight,1,1%,0", "x,backlight,a,1%,10", ""):
         assert backends.read_backlight(lambda a: (0, out)) is None
 
 
