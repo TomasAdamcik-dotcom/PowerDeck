@@ -167,7 +167,7 @@ def _display(p: Profile) -> list[Item]:
         items.append(Item(_("Night light on") if d["night_light"] else _("Night light off"), cmds("night_light")))
     if "brightness_percent" in d:
         b = d["brightness_percent"]
-        items.append(Item(_("Screen brightness {} %").format(b), [cmd.brightness(b)],
+        items.append(Item(_("Screen brightness {} %").format(b), [cmd.brightness("<backlight>", f"<{b} % of its maximum>")],
                           _("Needs the brightnessctl package.")))
     return items
 

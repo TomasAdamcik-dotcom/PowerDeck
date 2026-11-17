@@ -37,7 +37,9 @@ class Fake:
         if a[0] == "brightnessctl":
             if a[1] == "-m":
                 return 0, f"intel,backlight,{self.bright},{self.bright}%,100"
-            self.bright = int(a[2].rstrip("%")); return 0, ""
+            return 4, "Can't modify brightness: Permission denied"   # not in the video group
+        if a[:1] == ["busctl"] and "SetBrightness" in a:
+            self.bright = int(a[-1]); return 0, ""
         if a[0] == "powerprofilesctl":
             if a[1] == "get":
                 return 0, self.mode

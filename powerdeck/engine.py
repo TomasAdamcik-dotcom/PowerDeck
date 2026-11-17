@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import backends, commands, paths
-from .changes import USER_BACKENDS, Change
+from .changes import BRIGHTNESS, USER_BACKENDS, Change
 from .profile import Profile
 from .runner import Runner, system_runner
 
@@ -23,46 +23,43 @@ def _active_file(active_file: Path | None) -> Path:
     return active_file or paths.state_dir() / "active.json"
 
 
-# Back on Default the display keeps the brightness it had there last time: something outside
-# PowerDeck (GNOME after the logind reload?) set it to 50 % when switching back.
-DEFAULT = "Default"
-DEFAULT_BRIGHTNESS = 25        # when Default's last brightness is unknown
+# A switch keeps the display brightness the user had right before it: something outside
+# PowerDeck (GNOME, after the logind reload or the power mode change) sometimes sets the
+# panel to 50 % - the level systemd-backlight restored at boot - a moment later.
 BRIGHTNESS_SETTLE_S = 3.0      # keep checking this long: the jump can come a moment later
 BRIGHTNESS_POLL_S = 0.5
 
 
-def _brightness_file(active_file: Path | None) -> Path:
-    return _active_file(active_file).with_name("default-brightness.json")
-
-
-def _save_default_brightness(run: Runner, active_file: Path | None) -> None:
-    level = backends.read_brightness(run)
-    if level is not None:
-        f = _brightness_file(active_file)
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps({"percent": level}))
-
-
-def _default_brightness(active_file: Path | None) -> int:
-    try:
-        level = json.loads(_brightness_file(active_file).read_text())["percent"]
-    except (OSError, ValueError, KeyError, TypeError):
-        return DEFAULT_BRIGHTNESS
-    return level if isinstance(level, int) and 1 <= level <= 100 else DEFAULT_BRIGHTNESS
-
-
-def keep_brightness(run: Runner, percent: int, settle: float | None = None,
+def keep_brightness(run: Runner, raw: int, settle: float | None = None,
                     sleep=time.sleep) -> None:
-    """Set the brightness to ``percent`` and put it back if it changes within ``settle`` s."""
+    """Hold the backlight at ``raw`` and put it back if it changes within ``settle`` s."""
     settle = BRIGHTNESS_SETTLE_S if settle is None else settle
     for i in range(int(settle / BRIGHTNESS_POLL_S) + 1):
-        level = backends.read_brightness(run)
-        if level is None:
+        b = backends.read_backlight(run)
+        if b is None:
             return  # no backlight
-        if level != percent:
-            run(commands.brightness(percent))
+        if b.raw != raw:
+            log.info("brightness: %s %d → %d (back to the level before the switch)", b.device, b.raw, raw)
+            rc, out = run(commands.brightness(b.device, raw))
+            if rc != 0:
+                log.warning("brightness: %s", _printable(out.strip()))
+                return
         if i * BRIGHTNESS_POLL_S < settle:
             sleep(BRIGHTNESS_POLL_S)
+
+
+def _brightness_to_keep(p: Profile, light, undo: list[Change]) -> int | None:
+    """The backlight level a switch to ``p`` ends with: the one from before the switch, or the
+    one from before PowerDeck if a pending profile changed it; None if ``p`` sets its own."""
+    if light is None or "brightness_percent" in p.display:
+        return None
+    for c in undo:
+        if c.backend == BRIGHTNESS:
+            if c.revert_argv[:1] == ["busctl"] and c.revert_argv[-1].isdigit():
+                return int(c.revert_argv[-1])               # the exact level it puts back
+            if c.old.isdigit():
+                return light.raw_for(int(c.old))            # older backups: brightnessctl NN%
+    return light.raw
 
 
 @dataclass
@@ -277,8 +274,8 @@ def switch_to(p: Profile, run: Runner = system_runner, previous: Profile | None 
     """
     backup_dir = backup_dir or paths.backups_dir()
     switching = previous is None or previous.name != p.name
-    if switching and previous is not None and previous.name == DEFAULT:
-        _save_default_brightness(run, active_file)
+    keep = _brightness_to_keep(p, backends.read_backlight(run), pending_undo(backup_dir)) \
+        if switching else None
     if switching:
         while _backup_files(backup_dir):
             if errors := restore_last(run, backup_dir, active_file):
@@ -289,10 +286,8 @@ def switch_to(p: Profile, run: Runner = system_runner, previous: Profile | None 
         errors = []
     else:
         errors = apply_plan(plan, run, backup_dir, active_file)
-    # coming back from another profile (not the first apply, when nothing is known yet)
-    if previous is not None and switching and not errors and p.name == DEFAULT \
-            and "brightness_percent" not in p.display:
-        keep_brightness(run, _default_brightness(active_file))
+    if keep is not None and not errors:
+        keep_brightness(run, keep)
     return errors
 
 

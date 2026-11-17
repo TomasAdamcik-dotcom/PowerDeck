@@ -5,9 +5,9 @@ profile wants and are shared with describe.py, so the GUI shows exactly what is 
 """
 from __future__ import annotations
 
-import re
-
 import os
+import re
+from dataclasses import dataclass
 
 from . import commands as cmd
 from . import cpu, desktop, helper
@@ -218,14 +218,34 @@ def display_settings(d: dict) -> list[tuple[str, str, tuple[str, str], str]]:
     return out
 
 
-def read_brightness(run: Runner) -> int | None:
-    """Display brightness in percent (brightnessctl), or None without a backlight."""
+@dataclass(frozen=True)
+class Backlight:
+    device: str
+    raw: int
+    max: int
+
+    @property
+    def percent(self) -> int:
+        return round(self.raw * 100 / self.max)
+
+    def raw_for(self, percent: int) -> int:
+        return round(percent * self.max / 100)
+
+
+def read_backlight(run: Runner) -> Backlight | None:
+    """The display backlight (``brightnessctl -m``: name,class,raw,percent,max), or None."""
     rc, o = run(["brightnessctl", "-m"])
-    if rc == 0 and o.count(",") >= 4:
-        level = o.split(",")[3].rstrip("%")
-        if level.isdigit():
-            return int(level)
+    parts = o.strip().split(",") if rc == 0 else []
+    if len(parts) >= 5 and parts[1] == "backlight" and parts[2].isdigit() and parts[4].isdigit() \
+            and int(parts[4]) > 0 and re.fullmatch(r"[A-Za-z0-9_.:][A-Za-z0-9_.:-]*", parts[0]):
+        return Backlight(parts[0], int(parts[2]), int(parts[4]))
     return None
+
+
+def read_brightness(run: Runner) -> int | None:
+    """Display brightness in percent, or None without a backlight."""
+    b = read_backlight(run)
+    return b.percent if b else None
 
 
 def plan_display(p: Profile, run: Runner) -> list[Change]:
@@ -234,12 +254,13 @@ def plan_display(p: Profile, run: Runner) -> list[Change]:
     for _key, label, setting, value in display_settings(d):
         out += _gs_change(run, label, setting, value)
     if "brightness_percent" in d:
-        level = read_brightness(run)
-        if level is not None:
-            cur, new = str(level), str(d["brightness_percent"])
+        b = read_backlight(run)
+        if b is not None:
+            cur, new = str(b.percent), str(d["brightness_percent"])
             if cur != new:
                 out.append(Change(BRIGHTNESS, "Brightness (%)", cur, new,
-                                  cmd.brightness(new), cmd.brightness(cur)))
+                                  cmd.brightness(b.device, b.raw_for(int(new))),
+                                  cmd.brightness(b.device, b.raw)))
     return out
 
 
