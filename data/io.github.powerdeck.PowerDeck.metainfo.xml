@@ -22,7 +22,7 @@
         <ul>
           <li>Optional: switch profiles without the admin password (powerdeck no-password on), for administrators at the computer only</li>
           <li>Packages for Fedora (.rpm) and Arch/Manjaro (PKGBUILD); support for Debian, Fedora, Linux Mint (Cinnamon), Manjaro and Zorin OS</li>
-          <li>Back on Default restores the display brightness it last had</li>
+          <li>A profile switch keeps the display brightness you had (GNOME sometimes jumped to 50 %); brightness now works without the video group</li>
         </ul>
       </description>
     </release>
