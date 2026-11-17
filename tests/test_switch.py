@@ -148,3 +148,43 @@ def test_keep_brightness_catches_a_late_jump():
 
 def test_keep_brightness_without_backlight_does_nothing():
     engine.keep_brightness(lambda argv: (127, ""), 30, sleep=lambda s: pytest.fail("waited"))
+
+
+# -- GUI Apply button and top-bar icon: switch at once, no confirmation (engine.quick_switch)
+L = Profile(name="L", lid={"battery": "ignore", "ac": "ignore", "docked": "ignore"})
+
+
+def quick(sysm, b, active, p, previous, installed=True):
+    return engine.quick_switch(p, sysm, previous, installed, b, active)
+
+
+def test_quick_switch_applies_at_once(env):
+    sysm, b, active = env
+    assert quick(sysm, b, active, A, None) == []
+    assert sysm.mode == "power-saver" and engine.active_profile(active) == "A"
+    assert quick(sysm, b, active, B, A) == []
+    assert sysm.mode == "performance" and sysm.wifi["MojTelefon"] == "0"
+
+
+def test_quick_switch_to_the_active_profile_in_place_does_nothing(env):
+    sysm, b, active = env
+    assert quick(sysm, b, active, A, None) == []
+    sysm.calls.clear()
+    assert quick(sysm, b, active, A, A) == engine.NOTHING_TO_DO
+    assert not [c for c in sysm.calls if c[0] == "powerprofilesctl" and c[1] == "set"]
+
+
+def test_quick_switch_without_helper_changes_nothing(env):
+    """Must not: apply half a profile when its lid/CPU part cannot run."""
+    sysm, b, active = env
+    mode = sysm.mode
+    assert quick(sysm, b, active, L, None, installed=False) == engine.NEEDS_HELPER
+    assert sysm.mode == mode and engine.active_profile(active) is None
+    assert not engine._backup_files(b)
+
+
+def test_quick_switch_away_from_a_lid_profile_needs_the_helper_too(env):
+    sysm, b, active = env
+    assert quick(sysm, b, active, L, None) == []
+    assert quick(sysm, b, active, B, L, installed=False) == engine.NEEDS_HELPER
+    assert engine.active_profile(active) == "L"

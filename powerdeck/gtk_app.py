@@ -20,7 +20,8 @@ from . import backends, engine  # noqa: E402
 from .describe import Item, describe  # noqa: E402
 from .gtk_editor import ProfileEditor  # noqa: E402
 from .history_view import HistoryPanel  # noqa: E402
-from .gui_texts import COMPACT_CSS, MONITOR_HELP, MONITOR_ROWS, STATUS_HELP, STATUS_ROWS  # noqa: E402
+from .gui_texts import (COMPACT_CSS, FADED, HIDDEN, MONITOR_HELP, MONITOR_ROWS, STATUS_HELP,  # noqa: E402
+                        STATUS_ROWS, fold_states)
 from .i18n import _  # noqa: E402
 from .logs import setup_logging  # noqa: E402
 from .monitor import Monitor  # noqa: E402
@@ -73,8 +74,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.selected = None
         self.active_name: str | None = None
         self._status_pending = False
-        self._planning = False
         self._running = False
+        self._expanded = False  # profile contents folded (the owner's choice)
 
         header = Adw.HeaderBar()
         split = Adw.NavigationSplitView()
@@ -141,9 +142,10 @@ class MainWindow(Adw.ApplicationWindow):
         """Buttons right under the profile description."""
         actions = Adw.PreferencesGroup()
         box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, margin_top=6)
-        self.apply_btn = Gtk.Button(label=_("Apply…"), css_classes=["suggested-action", "pill"],
+        self.apply_btn = Gtk.Button(label=_("Apply"), css_classes=["suggested-action", "pill"],
                                     sensitive=False)
-        self.apply_btn.connect("clicked", lambda *_a: self._confirm(self.selected))
+        self.apply_btn.connect("clicked", lambda *_a: self.selected and
+                               self.get_application().apply_profile(self.selected.name))
         box.append(self.apply_btn)
         actions.add(box)
         return actions
@@ -244,7 +246,14 @@ class MainWindow(Adw.ApplicationWindow):
             return
         desc = describe(profile)
         self.info_group.set_title(profile.name)
-        self.info_group.set_description(GLib.markup_escape_text(desc.summary))
+        self.info_group.set_description(None)
+        first = Adw.ActionRow(title=GLib.markup_escape_text(desc.summary))
+        first.add_css_class("pd-compact")
+        self.fold_btn = Gtk.ToggleButton(active=self._expanded, valign=Gtk.Align.CENTER,
+                                         css_classes=["flat", "circular", "pd-info"])
+        self.fold_btn.connect("toggled", self._on_fold)
+        first.add_suffix(self.fold_btn)
+        self._add_info_row(first)
         for it in desc.items:
             self._add_info_row(self._bullet_row(it))
         if any(i.warning for i in desc.items) and profile.thermal_guard:
@@ -252,6 +261,21 @@ class MainWindow(Adw.ApplicationWindow):
             warn.set_title_lines(0)
             warn.add_css_class("pd-compact")
             self._add_info_row(warn)
+        self._show_fold()
+
+    def _on_fold(self, btn):
+        self._expanded = btn.get_active()
+        self._show_fold()
+
+    def _show_fold(self):
+        """Folded: the first line, the next one faded, the rest hidden; the arrow unfolds all."""
+        for row, state in zip(self.info_rows, fold_states(len(self.info_rows), self._expanded)):
+            row.set_visible(state != HIDDEN)
+            (row.add_css_class if state == FADED else row.remove_css_class)("pd-faded")
+        self.info_rows[0].set_title_lines(0 if self._expanded else 1)
+        self.fold_btn.set_visible(len(self.info_rows) > 1)
+        self.fold_btn.set_icon_name("pan-up-symbolic" if self._expanded else "pan-down-symbolic")
+        self.fold_btn.set_tooltip_text(_("Show less") if self._expanded else _("Show all"))
 
     def _bullet_row(self, it: Item) -> Adw.ActionRow:
         """Compact bullet row; its info icon shows the command (and a note) and copies it on click."""
@@ -327,56 +351,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._set_monitor("fan", na if s.fan_rpm is None else f"{s.fan_rpm} rpm")
         return True
 
-    # -- apply flow: plan off the UI thread, show the exact diff, ask, apply off the UI thread
-    def _confirm(self, profile):
-        if profile is None or self._planning:
-            return
-        self._planning = True
-        previous = self._find(engine.active_profile() or "")
-
-        def prepare():
-            switching = previous is None or previous.name != profile.name
-            return engine.make_plan(profile, previous=previous), engine.pending_undo() if switching else []
-
-        _in_background(prepare, lambda r: self._ask_apply(profile, previous, *r), self._planning_failed)
-
-    def _planning_failed(self, exc: Exception):
-        self._planning = False
-        self.error(_("Something went wrong"), str(exc))
-
-    def _ask_apply(self, profile, previous, plan: engine.Plan, undo: list):
-        """One confirmation for the whole switch: the previous profile's changes are undone,
-        then ``profile`` is applied on that clean state (engine.switch_to)."""
-        self._planning = False
-        needs_admin = plan.needs_admin or any(c.privileged for c in undo)
-        if needs_admin and not backends.helper_installed():
-            self.error(_("Admin helper is not installed."),
-                       _("Install it once with:") + "\n\nsudo scripts/install-helper.sh")
-            return
-        if undo:
-            head = (_("Changes of “{}” are undone:").format(previous.name) if previous
-                    else _("Changes of the previous profile are undone:"))
-            body = (head + "\n\n" + engine.undo_text(undo) + "\n\n"
-                    + _("Then “{}” is applied:").format(profile.name) + "\n\n"
-                    + "\n".join("• " + it.text for it in describe(profile).items))
-        elif plan.empty:
-            self.toast(_("No changes needed."))
-            return
-        else:
-            body = _("The following changes will be made:") + "\n\n" + plan.diff_text()
-        if needs_admin:
-            body += "\n\n" + _("Administrator permission will be requested.")
-        if profile.thermal_guard:
-            body += "\n\n⚠ " + _("Overheating risk: do not keep the laptop in a closed bag for long.")
-        dlg = Adw.AlertDialog(heading=_("Apply profile “{}”?").format(profile.name), body=body)
-        dlg.add_response("cancel", _("Cancel"))
-        dlg.add_response("apply", _("Apply"))
-        dlg.set_response_appearance("apply", Adw.ResponseAppearance.SUGGESTED)
-        dlg.set_close_response("cancel")
-        dlg.connect("response", lambda _d, r: r == "apply" and self._run(
-            lambda: engine.switch_to(profile, previous=previous), _("Applied “{}”.").format(profile.name)))
-        dlg.present(self)
-
+    # -- apply/restore run at once (no confirmation, the owner's choice), off the UI thread
     def _on_restore(self, *_a):
         self._run(engine.restore_last, _("Restored previous settings."))
 
@@ -390,6 +365,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _done(self, errs, ok_msg):
         self._running = False
         if errs:
+            self.present()  # e.g. a restore from the top-bar icon, with the window hidden
             self.error(_("Something went wrong"), "\n".join(errs))
         else:
             self.toast(ok_msg)
@@ -416,6 +392,7 @@ class App(Adw.Application):
         self.tray: Tray | None = None
         self._tray_active: str | None = None
         self._quitting = False
+        self._switching = False
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -456,18 +433,52 @@ class App(Adw.Application):
             self.tray.refresh()
         return True
 
+    def _open_window(self) -> MainWindow | None:
+        return next((w for w in self.get_windows() if isinstance(w, MainWindow)), None)
+
     def _window(self) -> MainWindow:
-        win = next((w for w in self.get_windows() if isinstance(w, MainWindow)), None) or MainWindow(self)
+        win = self._open_window() or MainWindow(self)
         win.present()
         return win
 
+    def apply_profile(self, name: str):
+        """Switch to ``name`` at once, without asking (Apply button, top-bar icon). From the
+        icon no window opens, unless something goes wrong."""
+        profiles = load_profiles()
+        profile = next((p for p in profiles if p.name == name), None)
+        if profile is None or self._switching:  # one switch at a time (double clicks, icon + button)
+            return
+        self._switching = True
+        active = engine.active_profile()
+        previous = next((p for p in profiles if p.name == active), None)
+        _in_background(lambda: engine.quick_switch(profile, previous=previous),
+                       lambda r: self._switched(profile.name, r),
+                       lambda e: self._switched(profile.name, [str(e)]))
+
+    def _switched(self, name: str, result):
+        self._switching = False
+        win = self._open_window()
+        if result == engine.NEEDS_HELPER:
+            self._window().error(_("Admin helper is not installed."),
+                                 _("Install it once with:") + "\n\nsudo scripts/install-helper.sh")
+            return
+        if result and result != engine.NOTHING_TO_DO:
+            self._window().error(_("Something went wrong"), "\n".join(result))
+        elif win is not None:
+            win.toast(_("No changes needed.") if result == engine.NOTHING_TO_DO
+                      else _("Applied “{}”.").format(name))
+        if win is not None:
+            win.refresh_status()
+        if self.tray is not None:
+            self._tray_active = engine.active_profile()
+            self.tray.refresh()
+
     def _tray_profile(self, name: str):
-        win = self._window()
-        win.reload_profiles()
-        win._confirm(win._find(name))  # same confirmation dialog as the Apply button
+        self.apply_profile(name)
 
     def _tray_restore(self):
-        self._window()._on_restore()
+        win = self._open_window() or MainWindow(self)  # the window only shows up on an error
+        win._on_restore()
 
     def quit_to_default(self):
         """Quitting PowerDeck puts the Default profile back (the owner's choice); without the

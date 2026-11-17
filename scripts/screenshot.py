@@ -18,6 +18,7 @@ ap.add_argument("--select", help="profile selected in the list")
 ap.add_argument("--width", type=int, default=1000)
 ap.add_argument("--height", type=int, default=1400)
 ap.add_argument("--history", action="store_true", help="open the history graph with made-up data")
+ap.add_argument("--unfold", action="store_true", help="show the whole profile contents (folded by default)")
 a = ap.parse_args()
 
 tmp = tempfile.mkdtemp()
@@ -57,6 +58,8 @@ def select():
         row = row.get_next_sibling()
     if row is not None and a.select:
         w.listbox.select_row(row)
+    if a.unfold and a.select:
+        w.fold_btn.set_active(True)
     if a.history:
         w.history_btn.set_active(True)
         w.history.graph.range_dd.set_selected(1)  # 6 hours: shows the switches and the gap
