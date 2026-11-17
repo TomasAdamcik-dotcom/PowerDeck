@@ -242,6 +242,27 @@ def pending_undo(backup_dir: Path | None = None) -> list[Change]:
     return list(merged.values())
 
 
+NEEDS_HELPER, NOTHING_TO_DO = "needs-helper", "nothing-to-do"
+
+
+def quick_switch(p: Profile, run: Runner = system_runner, previous: Profile | None = None,
+                 helper_installed=None, backup_dir: Path | None = None,
+                 active_file: Path | None = None) -> list[str] | str:
+    """Switch at once, without a confirmation (GUI Apply button and top-bar icon): the errors of
+    ``switch_to``, or NEEDS_HELPER (admin changes but no root helper; nothing is changed) or
+    NOTHING_TO_DO (``p`` is active and already in place)."""
+    from . import backends
+    switching = previous is None or previous.name != p.name
+    plan = make_plan(p, run, previous=previous)
+    undo = pending_undo(backup_dir) if switching else []
+    installed = backends.helper_installed() if helper_installed is None else helper_installed
+    if (plan.needs_admin or any(c.privileged for c in undo)) and not installed:
+        return NEEDS_HELPER
+    if not undo and plan.empty:
+        return NOTHING_TO_DO
+    return switch_to(p, run, previous=previous, backup_dir=backup_dir, active_file=active_file)
+
+
 def undo_text(changes: list[Change]) -> str:
     return "\n".join("• " + _printable(f"{c.target}: {c.new} → {c.old}") for c in changes)
 

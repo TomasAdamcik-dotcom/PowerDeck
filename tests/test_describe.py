@@ -188,3 +188,12 @@ def test_every_translatable_string_has_slovak():
     texts |= set(LID_VERB.values()) | set(POWER_MODE_TEXT.values()) | set(WIFI_TEXT.values())
     texts |= {p.description for p in BUILTIN_PROFILES}
     assert sorted(t for t in texts if t not in SK) == []
+
+
+def test_profile_contents_fold_to_one_line_and_a_faded_one():
+    from powerdeck.gui_texts import FADED, FULL, HIDDEN, fold_states
+    assert fold_states(5, expanded=False) == [FULL, FADED, HIDDEN, HIDDEN, HIDDEN]
+    assert fold_states(5, expanded=True) == [FULL] * 5
+    assert fold_states(1, expanded=False) == [FULL]
+    assert fold_states(2, expanded=False) == [FULL, FADED]
+    assert fold_states(0, expanded=False) == []
