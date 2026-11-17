@@ -32,7 +32,6 @@ ALLOWED = [
     commands.power_mode("power-saver", dbus=True),            # Fedora (tuned-ppd)
     ["rfkill", "unblock", "bluetooth"],
     ["rfkill", "block", "bluetooth"],
-    ["brightnessctl", "set", "40%"],
 ]
 
 REFUSED = [
@@ -67,6 +66,8 @@ REFUSED = [
      "/org/freedesktop/systemd1", "--method", "org.freedesktop.systemd1.Manager.StartUnit",
      "x.service", "replace"],
     ["rfkill", "block", "all"],
+    ["brightnessctl", "set", "40%"],                         # backlight: the user's pass now
+    commands.brightness("intel_backlight", 3000),             # logind: the user's session only
     ["brightnessctl", "set", "500%"],
     ["brightnessctl", "-d", "x", "set", "50%"],
     ["gsettings", "set", "a", "b", "c"],                          # user state, never as root
@@ -139,6 +140,21 @@ def test_user_pass_unaffected_by_whitelist(tmp_path):
     f = _two_applies(tmp_path)
     assert engine.reset_all(f, tmp_path / "b", only="user", active_file=tmp_path / "a.json") == []
     assert f.gs["idle-delay"] == "300"
+
+
+def test_backlight_is_reverted_by_the_user_never_by_root(tmp_path):
+    """Brightness goes through logind for the user's own session: the root pass skips it (old
+    ``brightnessctl set`` backups included) and the user's pass runs it."""
+    old_style = _change(["brightnessctl", "set", "40%"], backend="brightnessctl", target="Brightness (%)")
+    logind = _change(commands.brightness("intel_backlight", 3000), backend="brightnessctl",
+                     target="Brightness (%)")
+    _write_backup(tmp_path / "b", "1-X.json", [old_style, logind])
+    f = Fake()
+    assert engine.reset_all(f, tmp_path / "b", only="system", mark_restored=False) == []
+    assert f.calls == []
+    errs = engine.reset_all(f, tmp_path / "b", only="user", mark_restored=False)
+    assert commands.brightness("intel_backlight", 3000) in f.calls and f.bright == 3000
+    assert len(errs) == 1 and "Permission denied" in errs[0]       # old style: video group only
 
 
 def test_malformed_backups_are_reported_not_fatal(tmp_path):

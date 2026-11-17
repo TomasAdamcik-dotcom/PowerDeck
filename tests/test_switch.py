@@ -1,7 +1,7 @@
 """One-click profile switch (engine.switch_to): the previous profile leaves nothing behind."""
 import pytest
 
-from powerdeck import backends, engine, helper
+from powerdeck import backends, commands, engine, helper
 from powerdeck.profile import Profile
 
 from test_core import FakeSystem
@@ -74,20 +74,21 @@ def test_pending_undo_shows_value_before_powerdeck_and_value_now(env):
 
 
 class Backlight:
-    """Wraps a FakeSystem with a backlight that something outside PowerDeck may change."""
+    """Wraps a FakeSystem with a backlight (max 1000) that something outside PowerDeck may change."""
 
-    def __init__(self, sysm, level, jump_to=None):
-        self.sysm, self.level, self.jump_to, self.sets = sysm, level, jump_to, []
+    def __init__(self, sysm, raw, jump_to=None):
+        self.sysm, self.raw, self.jump_to, self.sets = sysm, raw, jump_to, []
 
     def __call__(self, argv):
         if argv == ["brightnessctl", "-m"]:
-            return 0, f"intel_backlight,backlight,{self.level * 100},{self.level}%,10000"
-        if argv[:2] == ["brightnessctl", "set"]:
-            self.level = int(argv[2].rstrip("%"))
-            self.sets.append(self.level)
+            return 0, f"intel_backlight,backlight,{self.raw},{round(self.raw / 10)}%,1000"
+        if argv[:1] == ["busctl"] and "SetBrightness" in argv:
+            assert argv == commands.brightness("intel_backlight", argv[-1])
+            self.raw = int(argv[-1])
+            self.sets.append(self.raw)
             return 0, ""
         if self.jump_to is not None and argv[:1] == ["powerprofilesctl"] and argv[1:2] == ["set"]:
-            self.level, self.jump_to = self.jump_to, None   # e.g. GNOME after a mode change
+            self.raw, self.jump_to = self.jump_to, None   # e.g. GNOME after a mode change
         return self.sysm(argv)
 
 
@@ -97,57 +98,77 @@ def no_wait(monkeypatch):
 
 
 DEFAULT = Profile(name="Default", power_mode="balanced")
+DIM = Profile(name="Dim", power_mode="power-saver", display={"brightness_percent": 40})
 
 
-def test_back_on_default_the_last_default_brightness_returns(env, no_wait):
+def test_a_switch_keeps_the_brightness_from_before_it(env, no_wait):
     sysm, b, active = env
-    light = Backlight(sysm, 21, jump_to=50)
-    assert engine.switch_to(DEFAULT, light, None, b, active) == []
-    assert engine.switch_to(A, light, DEFAULT, b, active) == []       # leaves Default at 21 %
-    light.level, light.jump_to = 70, 50                                # changed meanwhile; then a jump
+    light = Backlight(sysm, 158, jump_to=500)               # 15.8 %, then a jump to 50 %
+    assert engine.switch_to(A, light, None, b, active) == []
+    assert light.raw == 158 and light.sets == [158]          # exact level, not a rounded percent
+    light.raw, light.jump_to = 333, 500                      # the user changed it meanwhile
     assert engine.switch_to(DEFAULT, light, A, b, active) == []
-    assert light.level == 21
+    assert light.raw == 333 and light.sets == [158, 333]
 
 
-def test_default_brightness_unknown_means_25_percent(env, no_wait):
+def test_brightness_untouched_when_nothing_moves_it_or_when_staying(env, no_wait):
     sysm, b, active = env
-    light = Backlight(sysm, 50)
-    assert engine.switch_to(DEFAULT, light, A, b, active) == []
-    assert light.level == engine.DEFAULT_BRIGHTNESS == 25
-
-
-def test_brightness_untouched_when_not_going_to_default_or_staying(env, no_wait):
-    sysm, b, active = env
-    light = Backlight(sysm, 60)
+    light = Backlight(sysm, 600)
     engine.switch_to(A, light, None, b, active)
     engine.switch_to(B, light, A, b, active)
-    engine.switch_to(DEFAULT, light, DEFAULT, b, active)               # re-apply: nothing to fix
-    assert light.sets == [] and light.level == 60
-    # a Default that sets its own brightness keeps it
-    own = Profile(name="Default", power_mode="balanced", display={"brightness_percent": 80})
-    engine.switch_to(own, light, B, b, active)
-    assert light.level == 80
+    light.jump_to = 500
+    engine.switch_to(B, light, B, b, active)                 # re-apply: not a switch
+    assert light.sets == [] and light.raw == 600
+
+
+def test_a_profile_with_its_own_brightness_and_switching_away_from_it(env, no_wait):
+    sysm, b, active = env
+    light = Backlight(sysm, 253)
+    assert engine.switch_to(DIM, light, None, b, active) == []
+    assert light.raw == 400                                  # 40 % of 1000, through logind
+    light.jump_to = 500
+    assert engine.switch_to(DEFAULT, light, DIM, b, active) == []
+    assert light.raw == 253 and light.sets[-1] == 253        # exactly the level from before Dim
 
 
 def test_keep_brightness_catches_a_late_jump():
     calls = []
-    state = {"level": 30, "polls": 0}
+    state = {"raw": 300, "polls": 0}
 
     def run(argv):
         if argv == ["brightnessctl", "-m"]:
             state["polls"] += 1
             if state["polls"] == 3:
-                state["level"] = 50                                    # jumps a moment later
-            return 0, f"x,backlight,1,{state['level']}%,100"
+                state["raw"] = 500                           # jumps a moment later
+            return 0, f"x,backlight,{state['raw']},{state['raw'] // 10}%,1000"
         calls.append(argv)
-        state["level"] = int(argv[2].rstrip("%"))
+        state["raw"] = int(argv[-1])
         return 0, ""
-    engine.keep_brightness(run, 30, settle=2.0, sleep=lambda s: None)
-    assert calls == [["brightnessctl", "set", "30%"]] and state["level"] == 30
+    engine.keep_brightness(run, 300, settle=2.0, sleep=lambda s: None)
+    assert calls == [commands.brightness("x", 300)] and state["raw"] == 300
+
+
+def test_keep_brightness_gives_up_when_logind_refuses():
+    calls = []
+
+    def run(argv):
+        calls.append(argv)
+        if argv == ["brightnessctl", "-m"]:
+            return 0, "x,backlight,500,50%,1000"
+        return 1, "Call failed: Your session has no seat, refusing."
+    engine.keep_brightness(run, 300, settle=2.0, sleep=lambda s: None)
+    assert calls == [["brightnessctl", "-m"], commands.brightness("x", 300)]
 
 
 def test_keep_brightness_without_backlight_does_nothing():
     engine.keep_brightness(lambda argv: (127, ""), 30, sleep=lambda s: pytest.fail("waited"))
+
+
+def test_backlight_parsing_refuses_odd_device_names():
+    assert backends.read_backlight(lambda a: (0, "intel_backlight,backlight,3073,16%,19393\n")) \
+        == backends.Backlight("intel_backlight", 3073, 19393)
+    for out in ("x;id,backlight,1,1%,10", "x,leds,1,1%,10", "x,backlight,1,1%,0", "x,backlight,a,1%,10", ""):
+        assert backends.read_backlight(lambda a: (0, out)) is None
 
 
 # -- GUI Apply button and top-bar icon: switch at once, no confirmation (engine.quick_switch)

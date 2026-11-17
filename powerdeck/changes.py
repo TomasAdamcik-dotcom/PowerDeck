@@ -12,8 +12,9 @@ BRIGHTNESS = "brightnessctl"
 CPU = "cpu"
 RFKILL = "rfkill"
 TASK = "task"
-# Reverted as the user during uninstall (their dconf / their systemd); root reverts the rest.
-USER_BACKENDS = (GSETTINGS, TASK)
+# Reverted as the user during uninstall (their dconf / their systemd / their session's
+# backlight via logind); root reverts the rest.
+USER_BACKENDS = (GSETTINGS, TASK, BRIGHTNESS)
 
 
 @dataclass

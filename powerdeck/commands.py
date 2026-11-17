@@ -108,8 +108,12 @@ def bluetooth(on: bool) -> list[str]:
     return ["rfkill", "unblock" if on else "block", "bluetooth"]
 
 
-def brightness(percent) -> list[str]:
-    return ["brightnessctl", "set", f"{percent}%"]
+def brightness(device: str, raw) -> list[str]:
+    """Set the backlight through logind: allowed for the user of the active graphical session
+    (``session/auto`` = the caller's session, else their display session), unlike
+    ``brightnessctl set``, which needs the ``video`` group. GNOME follows the change."""
+    return ["busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1/session/auto",
+            "org.freedesktop.login1.Session", "SetBrightness", "ssu", "backlight", device, str(raw)]
 
 
 def user_task(action: str, unit: str) -> list[str]:
@@ -126,7 +130,6 @@ def screensaver(method: str, *args: str) -> list[str]:
 # NetworkManager 802-11-wireless.powersave: numbers as PowerDeck writes them, names as nmcli prints them
 _NM_POWERSAVE = ("0", "1", "2", "3", "default", "ignore", "disable", "enable")
 _NM_PRIORITY_RE = re.compile(r"-?[0-9]{1,3}")
-_PERCENT_RE = re.compile(r"[0-9]{1,3}%")
 
 
 def without_pkexec(argv: list[str]) -> list[str]:
@@ -162,6 +165,4 @@ def allowed_as_root(argv: list[str]) -> bool:
             return variant in [f"<'{m}'>" for m in POWER_MODES]
         case ["rfkill", "block" | "unblock", "bluetooth"]:
             return True
-        case ["brightnessctl", "set", value]:
-            return _PERCENT_RE.fullmatch(value) is not None and int(value[:-1]) <= 100
     return False
