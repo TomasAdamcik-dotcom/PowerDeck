@@ -8,7 +8,7 @@ Open work: `TODO.md`. The owner writes in Slovak; answer in Slovak.
 
 Root code is: `powerdeck/helper.py` (→ `/usr/libexec/powerdeck-helper`), `data/powerdeck-suspend`,
 `powerdeck/thermal_limit.py` (→ `/usr/libexec/powerdeck-thermal`, run by
-`data/powerdeck-thermal@.service`), `data/io.github.powerdeck.policy`, `scripts/uninstall-reset.sh`, the root pass of
+`data/powerdeck-thermal@.service`), `powerdeck/nopassword_rule.py` (→ `/usr/libexec/powerdeck-nopassword`), `data/io.github.powerdeck.policy`, `scripts/uninstall-reset.sh`, the root pass of
 `powerdeck reset-all --only system` (`engine.reset_all`, `commands.allowed_as_root`), the Debian
 maintainer scripts written by `scripts/build-deb.sh`, the scriptlets in `packaging/rpm/powerdeck.spec`
 and `packaging/arch/powerdeck.install`, `scripts/install-helper.sh`, and
@@ -22,8 +22,8 @@ and `packaging/arch/powerdeck.install`, `scripts/install-helper.sh`, and
 2. **No generic "run as root".** The helper and each polkit action do one narrow thing. A new
    privileged operation = a new helper subcommand with its own validation and tests, never a
    pass-through of argv, a shell string or a path chosen by the user.
-3. **Root's Python never imports from places a user controls:** `python3 -I` for the helper and
-   the thermal daemon (both stdlib only),
+3. **Root's Python never imports from places a user controls:** `python3 -I` for the helper,
+   the thermal daemon and powerdeck-nopassword (all stdlib only),
    `-P` plus `cd /` in shell scripts; no `sys.path` tricks (checked by `tests/test_root_rules.py`).
 4. **Paths from the user side:** refuse symlinks a non-root user could have planted
    (`engine._symlinked_dir`); write system files atomically (`tmp` + `os.replace`), mode 0644.

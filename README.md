@@ -10,7 +10,7 @@ See also [future_improvements.md](future_improvements.md) (how to work more effi
 
 ## Status (v1.0 – in daily use on a ThinkPad T14s Gen 4)
 
-Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mode, display timers/brightness/night light, Bluetooth, CPU limits and a temperature-regulated CPU power limit (Rucksack), whitelisted user-service tasks; thermal/battery guard that starts with the session (suspends on sustained overheating or at 15 % battery with the lid ignored, keeps RDP reachable); GTK4 app with profile editor and a top-bar icon; CLI; `.deb` build. See [TODO.md](TODO.md) for what is left and the real-hardware checklist.
+Profiles for lid, auto-suspend, Wi‑Fi powersave, tethering priority, power mode, display timers/brightness/night light, Bluetooth, CPU limits and a temperature-regulated CPU power limit (Rucksack), whitelisted user-service tasks; thermal/battery guard that starts with the session (suspends on sustained overheating or at 15 % battery with the lid ignored, keeps RDP reachable); GTK4 app with profile editor and a top-bar icon; CLI; `.deb`, `.rpm` and Arch packages; optional profile switching without the admin password (`powerdeck no-password on`, see below). See [TODO.md](TODO.md) for what is left and the real-hardware checklist.
 
 ## Requirements and compatibility
 
@@ -34,6 +34,18 @@ Used daily on **Ubuntu 26.04 with GNOME** (ThinkPad T14s Gen 4, Intel) and teste
 | GNOME or Cinnamon | idle/lock/display settings, the guard's screensaver handling, top-bar icon (GNOME: AppIndicator extension) | desktop sharing (RDP) restart: GNOME only; on KDE/Xfce only lid, Wi‑Fi and power mode would work |
 | Python 3.11+, GTK 4.10+, libadwaita 1.5+ | the app | Ubuntu 24.04+, Debian 13+, Fedora 40+, Mint 22+, Zorin OS 18 (not Debian 12, Zorin OS 17) |
 | CPU | turbo: Intel and AMD; temperature regulation: RAPL power limits (Intel), otherwise the max-frequency cap | |
+
+## Switch profiles without the admin password (optional, new in 1.1)
+
+Changing the lid or CPU settings goes through a small root helper and asks for the admin password (polkit remembers it for a few minutes). If you switch profiles often, you can turn the prompt off:
+
+```bash
+powerdeck no-password on       # asks for the password one last time
+powerdeck no-password status   # also shown by: powerdeck doctor
+powerdeck no-password off      # ask again
+```
+
+`on` always asks for the password (even if you typed it a minute ago) and installs one polkit rule, `/etc/polkit-1/rules.d/49-powerdeck-no-password.rules`. It covers only PowerDeck's own action (`io.github.powerdeck.manage-power`: the lid drop-in, CPU turbo, the CPU frequency cap and the temperature regulation, each with fixed values) and only **administrators** (groups `sudo`, `wheel` or `admin`) **sitting at the computer** (an active local session). Over SSH, for other users or for anything else on the system the password is still asked. The trade-off: any program running under your account can then change these PowerDeck settings without asking, for example keep the laptop awake with the lid closed or cap the CPU; it cannot run anything else as root. Remote desktop viewers controlling your session count as sitting at the computer. Removing PowerDeck deletes the rule. It is off by default.
 
 ## Licence
 
@@ -82,7 +94,7 @@ Dependencies (Fedora): `python3-gobject gtk4 libadwaita NetworkManager polkit tu
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 python3 -m powerdeck.gtk_app        # GUI
 python3 -m powerdeck.cli monitor --csv out.csv --duration 60   # temperature/frequency/load/power log
-python3 -m powerdeck.cli list       # CLI: list | status | doctor | plan NAME | apply NAME | restore | snapshot | guard
+python3 -m powerdeck.cli list       # CLI: list | status | doctor | no-password on|off | plan NAME | apply NAME | restore | snapshot | guard
 pytest                              # tests (fake system, no root needed)
 ```
 

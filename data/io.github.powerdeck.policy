@@ -20,6 +20,23 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/powerdeck-helper</annotate>
   </action>
 
+  <!-- `powerdeck no-password on|off`: installs or removes PowerDeck's own polkit rule (fixed
+       content). Always asks for the password (no "keep"), so the password typed for a profile
+       change a few minutes earlier cannot be reused to turn the prompt off for good. -->
+  <action id="io.github.powerdeck.no-password">
+    <description>Allow or stop changing PowerDeck's lid and CPU settings without a password</description>
+    <description xml:lang="sk">Povoliť alebo zrušiť zmenu nastavení veka a procesora v PowerDecku bez hesla</description>
+    <message>Authentication is required to change whether PowerDeck asks for the password</message>
+    <message xml:lang="sk">Na zmenu toho, či PowerDeck pýta heslo, je potrebné overenie</message>
+    <icon_name>preferences-system-power</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/powerdeck-nopassword</annotate>
+  </action>
+
   <!-- Guard suspend: only suspends (ignoring inhibitors). Allowed without a password for the
        active local user so the guard can protect a laptop in a closed bag from overheating or
        from running flat (low battery). The id keeps its old name for existing installs. -->

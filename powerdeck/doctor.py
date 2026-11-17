@@ -88,6 +88,12 @@ def check_system(run: Runner = system_runner, which=find,
     out.append((OK, "top-bar icon (StatusNotifierWatcher)") if rc == 0 and "true" in out_
                else (WARN, "no top-bar icon host" + (" (GNOME: AppIndicator extension)" if desk == desktop.GNOME else "")
                      + "; closing the window quits PowerDeck"))
+    if backends.helper_installed():
+        from . import nopassword
+        np = nopassword.status(run)
+        if np != nopassword.UNKNOWN:
+            out.append((INFO, "admin password: not needed (powerdeck no-password off)" if np == nopassword.ON
+                        else "admin password: asked for lid/CPU changes (skip it: powerdeck no-password on)"))
     rc, out_ = run(["systemctl", "--user", "is-active", "powerdeck-guard"])
     out.append((OK, "guard service running") if out_.strip() == "active"
                else (WARN, "guard service not running: systemctl --user enable --now powerdeck-guard"))

@@ -68,6 +68,7 @@ cat > "$OUT/DEBIAN/postrm" <<'RM'
 set -e
 if [ "$1" = "purge" ] || [ "$1" = "remove" ]; then
   rm -f /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
+  rm -f /etc/polkit-1/rules.d/49-powerdeck-no-password.rules /etc/polkit-1/rules.d/49-powerdeck-no-password.rules.tmp
   systemctl daemon-reload 2>/dev/null || true
 fi
 RM
