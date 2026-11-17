@@ -17,7 +17,15 @@
   <content_rating type="oars-1.1"/>
   <launchable type="desktop-id">io.github.powerdeck.PowerDeck.desktop</launchable>
   <releases>
-    <release version="1.1.0" date="2026-11-16"/>
+    <release version="1.1.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Optional: switch profiles without the admin password (powerdeck no-password on), for administrators at the computer only</li>
+          <li>Packages for Fedora (.rpm) and Arch/Manjaro (PKGBUILD); support for Debian, Fedora, Linux Mint (Cinnamon), Manjaro and Zorin OS</li>
+          <li>Back on Default restores the display brightness it last had</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-11-16"/>
   </releases>
 </component>

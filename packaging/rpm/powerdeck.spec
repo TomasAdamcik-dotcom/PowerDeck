@@ -51,6 +51,7 @@ fi
 %postun
 if [ "$1" -eq 0 ]; then
     rm -f /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
+    rm -f /etc/polkit-1/rules.d/49-powerdeck-no-password.rules /etc/polkit-1/rules.d/49-powerdeck-no-password.rules.tmp
     systemctl daemon-reload >/dev/null 2>&1 || :
 fi
 
@@ -60,6 +61,7 @@ fi
 /usr/bin/powerdeck
 /usr/bin/powerdeck-gtk
 /usr/libexec/powerdeck-helper
+/usr/libexec/powerdeck-nopassword
 /usr/libexec/powerdeck-suspend
 /usr/libexec/powerdeck-thermal
 /usr/libexec/powerdeck-uninstall-reset
@@ -77,3 +79,4 @@ fi
 %changelog
 * Mon Nov 16 2026 Tomas Adamcik <82325837+TomasAdamcik-dotcom@users.noreply.github.com> - 1.1.0-1
 - First RPM: Fedora support (power mode through tuned-ppd), Cinnamon, powerdeck doctor
+- Optional profile switching without the admin password: powerdeck no-password on

@@ -14,6 +14,7 @@ from .profile import POWER_MODES
 # Fixed, root-owned path matched by the polkit policy (data/*.policy).
 # Never fall back to running code from the user's own directories as root.
 HELPER_PATH = "/usr/libexec/powerdeck-helper"
+NOPASSWORD_PATH = "/usr/libexec/powerdeck-nopassword"
 
 # gsettings (schema, key) pairs
 POWER_SCHEMA = "org.gnome.settings-daemon.plugins.power"

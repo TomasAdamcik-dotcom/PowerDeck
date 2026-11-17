@@ -17,8 +17,8 @@ if [ "${1:-}" = "--uninstall" ]; then
   export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)${PYTHONPATH:+:$PYTHONPATH}"
   sh "$(dirname "$0")/uninstall-reset.sh"
   systemctl stop 'powerdeck-thermal@*.service' 2>/dev/null || true
-  rm -f "$HELPER" "$POLICY" "$THERMAL" "$UNIT" /usr/libexec/powerdeck-suspend \
-    /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
+  rm -f "$HELPER" "$POLICY" "$THERMAL" "$UNIT" /usr/libexec/powerdeck-suspend /usr/libexec/powerdeck-nopassword \
+    /etc/systemd/logind.conf.d/99-powerdeck-lid.conf /etc/polkit-1/rules.d/49-powerdeck-no-password.rules /etc/polkit-1/rules.d/49-powerdeck-no-password.rules.tmp
   systemctl daemon-reload 2>/dev/null || true
   systemctl kill -s HUP systemd-logind 2>/dev/null || true
   echo "Settings restored; removed helper, policy, thermal service and lid drop-in."
@@ -30,6 +30,7 @@ cd "$(dirname "$0")/.."
 install -D -m 0755 -o root -g root powerdeck/helper.py "$HELPER"
 install -D -m 0755 -o root -g root data/powerdeck-suspend /usr/libexec/powerdeck-suspend
 install -D -m 0755 -o root -g root powerdeck/thermal_limit.py "$THERMAL"
+install -D -m 0755 -o root -g root powerdeck/nopassword_rule.py /usr/libexec/powerdeck-nopassword
 install -D -m 0644 -o root -g root data/powerdeck-thermal@.service "$UNIT"
 install -D -m 0644 -o root -g root data/io.github.powerdeck.policy "$POLICY"
 systemctl daemon-reload 2>/dev/null || true

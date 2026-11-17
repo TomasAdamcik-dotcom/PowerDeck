@@ -8,6 +8,7 @@ set -eu
 umask 022
 MANIFEST=/usr/share/powerdeck/installed-files
 LIDDROPIN=/etc/systemd/logind.conf.d/99-powerdeck-lid.conf
+NOPASSWORD=/etc/polkit-1/rules.d/49-powerdeck-no-password.rules
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root: sudo $0 $*" >&2
@@ -42,7 +43,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   # in any case, while its ExecStopPost (restores the CPU limits) still exists
   systemctl stop 'powerdeck-thermal@*.service' 2>/dev/null || true
   remove_listed "$MANIFEST"
-  rm -f -- "$MANIFEST" "$LIDDROPIN"
+  rm -f -- "$MANIFEST" "$LIDDROPIN" "$NOPASSWORD" "$NOPASSWORD.tmp"
   rmdir /usr/share/powerdeck 2>/dev/null || true
   systemctl daemon-reload 2>/dev/null || true
   systemctl kill -s HUP systemd-logind 2>/dev/null || true

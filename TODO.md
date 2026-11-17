@@ -60,6 +60,9 @@ Drobnosti:
 
 ## Hotové
 
+**Bez admin hesla (2026-11-17, v1.1.0)**
+- `powerdeck no-password on|off|status`: voliteľné polkit pravidlo len pre PowerDeck a admina pri počítači; v README a v poznámkach k vydaniu 1.1.0 (metainfo). Pri vydaní 1.1.0 to uviesť aj v GitHub release notes.
+
 **Balíky a VM testy (2026-11-16, v1.1.0)**
 - `.rpm` (`packaging/rpm/powerdeck.spec`, `scripts/build-rpm.sh`) a PKGBUILD (`packaging/arch/`, `scripts/build-arch.sh`); odstránenie balíka najprv vráti nastavenia.
 - `scripts/distro-vm.sh debian|fedora test`: veko cez logind, pkexec + helper, režim napájania (Fedora: tuned-ppd naživo), strážca ako user služba, odinštalovanie bez zvyškov – všetko prešlo.

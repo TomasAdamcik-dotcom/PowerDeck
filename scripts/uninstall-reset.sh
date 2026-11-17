@@ -6,7 +6,7 @@
 #    Bluetooth, brightness, lid, CPU), then gsettings/tasks as that user (their own dconf);
 # 2. stop and disable the guard service;
 # 3. safety net: remove the lid drop-in, stop the temperature regulation (it restores the CPU
-#    limits), turbo on and no CPU frequency cap (kernel defaults).
+#    limits), turbo on and no CPU frequency cap (kernel defaults), the password prompt back.
 PY=${POWERDECK_PYTHON:-/usr/bin/python3}
 # Python runs as root here: never import from the current directory (a planted powerdeck/ or
 # json.py would run as root). `-P` keeps the cwd off sys.path, `cd /` makes sure of it.
@@ -15,6 +15,7 @@ cd / || exit 0
 # no bytecode written as root into the package directory (it would stay after removal)
 export PYTHONDONTWRITEBYTECODE=1
 HELPER=${POWERDECK_HELPER:-/usr/libexec/powerdeck-helper}
+NOPASSWORD=${POWERDECK_NOPASSWORD:-/usr/libexec/powerdeck-nopassword}
 PASSWD=${POWERDECK_PASSWD:-/etc/passwd}
 
 getent_users() { awk -F: '$3 >= 1000 && $3 < 65534 { print $1 ":" $3 ":" $6 }' "$PASSWD"; }
@@ -48,4 +49,5 @@ if [ -x "$HELPER" ]; then
   "$HELPER" set-cpu-turbo on >/dev/null 2>&1 || true
   "$HELPER" set-cpu-max-percent 100 >/dev/null 2>&1 || true
 fi
+[ -x "$NOPASSWORD" ] && "$NOPASSWORD" off >/dev/null 2>&1 || true
 exit 0

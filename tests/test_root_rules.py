@@ -38,10 +38,11 @@ def test_suspend_helper_takes_no_arguments():
     assert lines == ["exec /usr/bin/systemctl suspend --ignore-inhibitors"]
 
 
-def test_polkit_actions_point_only_at_the_two_helpers():
+def test_polkit_actions_point_only_at_the_three_root_programs():
     policy = (ROOT / "data/io.github.powerdeck.policy").read_text()
     paths = re.findall(r'org\.freedesktop\.policykit\.exec\.path">([^<]+)<', policy)
-    assert sorted(paths) == ["/usr/libexec/powerdeck-helper", "/usr/libexec/powerdeck-suspend"]
+    assert sorted(paths) == ["/usr/libexec/powerdeck-helper", "/usr/libexec/powerdeck-nopassword",
+                             "/usr/libexec/powerdeck-suspend"]
 
 
 def _ours(paths):
@@ -81,7 +82,8 @@ def test_staged_modes(tmp_path):
     files = _staged(tmp_path, "/usr/lib/python3/dist-packages")
     exe = {f for f, p in files.items() if not p.is_symlink() and p.stat().st_mode & 0o777 == 0o755}
     assert exe == {"/usr/bin/powerdeck", "/usr/bin/powerdeck-gtk", "/usr/libexec/powerdeck-helper",
-                   "/usr/libexec/powerdeck-suspend", "/usr/libexec/powerdeck-thermal",
+                   "/usr/libexec/powerdeck-nopassword", "/usr/libexec/powerdeck-suspend",
+                   "/usr/libexec/powerdeck-thermal",
                    "/usr/libexec/powerdeck-uninstall-reset"}
     others = {p.stat().st_mode & 0o777 for f, p in files.items() if f not in exe and not p.is_symlink()}
     assert others == {0o644}
@@ -119,6 +121,7 @@ def test_package_scripts_only_run_the_root_owned_reset_and_fixed_commands():
                "systemctl stop 'powerdeck-thermal@*.service' >/dev/null 2>&1 || :",
                "systemctl stop 'powerdeck-thermal@*.service' >/dev/null 2>&1 || true",
                "rm -f /etc/systemd/logind.conf.d/99-powerdeck-lid.conf",
+               "rm -f /etc/polkit-1/rules.d/49-powerdeck-no-password.rules /etc/polkit-1/rules.d/49-powerdeck-no-password.rules.tmp",
                "systemctl daemon-reload >/dev/null 2>&1 || :", "systemctl daemon-reload >/dev/null 2>&1 || true"}
     spec = (ROOT / "packaging/rpm/powerdeck.spec").read_text()
     # every section that rpm runs as root on the target system: only these three, checked below

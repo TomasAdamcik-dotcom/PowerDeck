@@ -16,5 +16,6 @@ pre_remove() {
 
 post_remove() {
     rm -f /etc/systemd/logind.conf.d/99-powerdeck-lid.conf
+    rm -f /etc/polkit-1/rules.d/49-powerdeck-no-password.rules /etc/polkit-1/rules.d/49-powerdeck-no-password.rules.tmp
     systemctl daemon-reload >/dev/null 2>&1 || true
 }

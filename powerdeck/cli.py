@@ -1,4 +1,4 @@
-"""powerdeck CLI: list | status | doctor | plan NAME | apply NAME [-y] | restore | reset-all | snapshot | monitor | guard"""
+"""powerdeck CLI: list | status | doctor | no-password on|off|status | plan NAME | apply NAME [-y] | restore | reset-all | snapshot | monitor | guard"""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +19,8 @@ def main(argv=None) -> int:
     sub.add_parser("status")
     sub.add_parser("doctor", help="check what PowerDeck can do on this system")
     sub.add_parser("restore")
+    n = sub.add_parser("no-password", help="change profiles without the admin password (administrators at this computer)")
+    n.add_argument("what", choices=("on", "off", "status"), nargs="?", default="status")
     r = sub.add_parser("reset-all", help="undo every applied profile (used when uninstalling)")
     r.add_argument("--only", choices=("user", "system"))
     r.add_argument("--backups", help="backup directory (default: your own)")
@@ -54,6 +56,9 @@ def main(argv=None) -> int:
     if a.cmd == "doctor":
         from . import doctor
         return doctor.run_cli()
+    if a.cmd == "no-password":
+        from . import nopassword
+        return nopassword.run_cli(a.what)
     if a.cmd == "monitor":
         from . import monitor
         monitor.run_cli(a.interval, a.duration, a.csv)
